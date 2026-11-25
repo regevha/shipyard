@@ -21,7 +21,7 @@ There is no fifth service. A real event queue comes in a later wave. Unclear poi
 - `contracts/api-<service>.yml` for the four services: endpoints, request and response shapes.
 - `contracts/errors.yml`: one shared error envelope and the status codes.
 - `docs/OPEN_QUESTIONS.md`: every conflict or unclear point, with sources and options.
-- CI: a required aggregate check (`ci-ok`), a YAML parse check of every contract and every `docs/tasks/*.yml`, and
+- CI (placed in wave 1 by the lead, Q-25): a required aggregate check (`ci-ok`), a YAML parse check of every contract and every `docs/tasks/*.yml`, and
   a check that every example in the contracts validates against its schema.
 
 **Non-goals (wave 1)**
@@ -33,12 +33,14 @@ There is no fifth service. A real event queue comes in a later wave. Unclear poi
 
 ## Waves
 
-**Wave 1: contracts + CI (T010-T012).** Order: T010 (this plan) merges first, because
-`scripts/ci/check_task_scope.py` reads `docs/tasks/<ID>.yml` from the base branch; then T011 (CI); then T012
-(contracts), which must pass T011's checker. T011 and T012 have disjoint `files_touched`, but T012 depends on T011,
-so they run one after the other.
+**Wave 1: contracts + CI (T010-T013).** (The brief says "Wave 1 is CONTRACTS ONLY"; putting CI in wave 1 is the lead's
+reading of "Set up CI from day one", Q-25. The brief's text: [`docs/BRIEF.md`](BRIEF.md).) Order: T010 (this plan)
+merges first, because `scripts/ci/check_task_scope.py` reads `docs/tasks/<ID>.yml` from the base branch; then T011
+(CI); then T012 (contracts), which must pass T011's checker. T011 and T012 have disjoint `files_touched`, but T012
+depends on T011, so they run one after the other.
 
-**Wave 2: the four services, built against the contracts (outline only, no specs yet).** Starts with the decisions
+**Wave 2: the four services, built against the contracts (outline only, no specs yet; the wave 2/3 split is the lead's
+outline, not the brief's, Q-27).** Starts with the decisions
 listed as "wave 0" in `docs/team/environment.md` (Q-03). Rough task list, at most 3 build agents at a time, so it
 will likely split into 2a and 2b:
 - Setup (devops): per-service `pyproject.toml` and lockfile, port base and slot numbering, local start command,
@@ -50,13 +52,14 @@ will likely split into 2a and 2b:
 - Stack-level HTTP test (tester): start all four, run a pipeline, upload, request, approve, promote, check the
   dashboard read API.
 
-**Wave 3: hardening (outline only).** Replace the HTTP event calls with a real queue (the contracts keep the event
+**Wave 3: hardening (outline only; lead's outline, Q-27).** Replace the HTTP event calls with a real queue (the
+contracts keep the event
 payloads); auth between services if not settled earlier; retries, persistence and failure handling; e2e browser
 flows (e2e-tester); possibly a React dashboard (user decision at that point).
 
 ## Contract file format
 
-T011 (checker) and T012 (contracts) follow this section exactly. "MUST" rules are enforced by
+T011 (checker) and T012 (contracts) follow this section exactly. The formats and rules below are the lead's constraint and the architect's design, not the user's brief (Q-26, assumed, pending user). "MUST" rules are enforced by
 `scripts/ci/check_contracts.py`; anything not listed here is not checked.
 
 ### Files
@@ -194,11 +197,12 @@ equal to the file name without `.yml`.
 
 Owner, branch, dependencies and `read_first` are in each `docs/tasks/Tnn.yml`.
 
-| ID | Task | Acceptance (runnable command) | Files touched | Status |
+| ID | Task | Acceptance (runnable command; reading of the brief, Q-08) | Files touched | Status |
 | --- | --- | --- | --- | --- |
-| [T010](tasks/T010.yml) ([#9](https://github.com/regevha/shipyard/issues/9)) | Wave 1 plan, contract file format, task specs, open questions | `python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('docs/tasks/*.yml')]; print('ok')"` prints `ok`; the disjoint check in `docs/tasks/T010.yml` prints `disjoint` | `docs/PLAN.md`, `docs/OPEN_QUESTIONS.md`, `docs/tasks/T010.yml`, `docs/tasks/T011.yml`, `docs/tasks/T012.yml` | in-review |
-| [T011](tasks/T011.yml) ([#10](https://github.com/regevha/shipyard/issues/10)) | CI: contract and task-spec checker, aggregate `ci-ok` job | `python3 scripts/ci/check_contracts.py --self-test` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; `ci-ok` check run is `success` on the PR head and on `main` (command in `T011.yml`) | `.github/workflows/ci.yml`, `scripts/ci/check_contracts.py`, `scripts/ci/requirements-contracts.txt`, `scripts/ci/fixtures/contracts/**` | todo |
+| [T010](tasks/T010.yml) ([#9](https://github.com/regevha/shipyard/issues/9)) | Wave 1 plan, contract file format, task specs, open questions | `python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('docs/tasks/*.yml')]; print('ok')"` prints `ok`; the disjoint check in `docs/tasks/T010.yml` prints `disjoint` | `docs/PLAN.md`, `docs/OPEN_QUESTIONS.md`, `docs/tasks/T010.yml`, `docs/tasks/T011.yml`, `docs/tasks/T012.yml` | done (PR #12, a265a4f) |
+| [T011](tasks/T011.yml) ([#10](https://github.com/regevha/shipyard/issues/10)) | CI: contract and task-spec checker, aggregate `ci-ok` job | `python3 scripts/ci/check_contracts.py --self-test` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; `ci-ok` check run is `success` on the PR head and on `main` (command in `T011.yml`) | `.github/workflows/ci.yml`, `scripts/ci/check_contracts.py`, `scripts/ci/requirements-contracts.txt`, `scripts/ci/fixtures/contracts/**` | in-review |
 | [T012](tasks/T012.yml) ([#11](https://github.com/regevha/shipyard/issues/11)) | Wave 1 contracts: events, errors, four service APIs; open questions updated | `python3 scripts/ci/check_contracts.py` exits 0; the file-presence loop in `T012.yml` exits 0; reviewer APPROVE on cross-service consistency (review gate, not a command) | `contracts/events.yml`, `contracts/errors.yml`, `contracts/api-pipeline-runner.yml`, `contracts/api-artifact-store.yml`, `contracts/api-release-service.yml`, `contracts/api-dashboard.yml`, `docs/OPEN_QUESTIONS.md` | todo |
+| [T013](https://github.com/regevha/shipyard/issues/38) ([#38](https://github.com/regevha/shipyard/issues/38)) | Store the user's brief verbatim (`docs/BRIEF.md`); check every "brief" citation against it; label the lead's own choices as assumptions (Q-25..Q-27) | `python3 scripts/team/check_brief_quotes.py --self-test` and `python3 scripts/team/check_brief_quotes.py` exit 0: every double-quoted passage (12+ characters, outside code) in `docs/OPEN_QUESTIONS.md` and `docs/PLAN.md` is word for word in `docs/BRIEF.md`, or is a section name, is labelled as a paraphrase, or is declared with its source in the script's `OTHER_SOURCES`; every `resolved-by-user-brief` entry has a Brief (verbatim) bullet with a quote found in the brief; reviewer APPROVE (review gate, not a command) | `docs/BRIEF.md`, `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md`, `scripts/team/check_brief_quotes.py` | in-review |
 
 ## Contract change requests
 
