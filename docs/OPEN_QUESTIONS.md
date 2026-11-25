@@ -93,8 +93,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 
 ### Q-06 Required aggregate check
 - **Facts (corrected by T015):** `main` has no classic branch protection (that API returns 404), but it has an
-  active repository ruleset, `Main1` (created 2026-11-25 20:26, read with `gh api
-  repos/regevha/shipyard/rulesets/28098519`): no deletion, no force-push, changes through a PR (0 approvals), and
+  active repository ruleset, `Main1` (created 2026-11-25T20:26+02:00, read with `gh api
+  repos/regevha/shipyard/rulesets/28098519`): no deletion, no force-push, changes through a PR (0 approvals; extra approval required for unattributed changes), and
   required status checks = the four team-checks jobs, with branches required to be up to date. `ci-ok` is not
   required. The first version of this entry (T010) said no check was required; that was wrong, because only the
   classic protection API was checked. A job can `needs:` only jobs in
@@ -271,7 +271,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Status:** `open`. T012 default, **assumed, pending user**: `POST /runs` returns 202 with the run ID and runs
   in the background; `GET /runs/{id}` gives the status and per-step results; steps run in order and the run stops
   at the first failed step; no cancel and no re-run in wave 1-2; the runner uploads artifacts after a passed run.
-  Which files a step produces as artifacts depends on Q-19.
+  Which files a step produces as artifacts depended on Q-19; the user's Q-19 answer (#34: simulated steps) does
+  not say, so it is now Q-34 (#110, needs-decision).
 
 ### Q-21 Error envelope vs FastAPI defaults
 - **Point:** the brief asks for one shared error envelope. FastAPI's built-in errors use `{"detail": ...}` and its
@@ -292,7 +293,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 
 ### Q-28 Run or build: one name for one concept
 - **Point (found by T012):** the brief speaks of builds (build started, build finished) and the runner's job as
-  running a pipeline definition. The Q-17 and Q-18 defaults call the identifier `build_id`; the Q-20 default calls
+  running a pipeline definition. Q-17 (answered by the user, #33) and the Q-18 default call the identifier `build_id`; the Q-20 default calls
   the resource a run (`POST /runs`, `GET /runs/{id}`, the run ID). Two names for one concept would break the
   cross-service consistency the reviewer checks.
 - **Options:** (a) one run is one build: the identifier is `build_id` in every file and the runner's paths stay
@@ -351,3 +352,12 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   optional per-step `simulate: passed|failed` (contradicts the decision that the shape stays).
 - **Status:** `needs-decision` (issue #107), no default. The contracts fix no mechanism; `contracts/api-pipeline-runner.yml`
   says this is open. Blocks wave 2 runner behaviour, not the wave 1 contract shape.
+
+### Q-34 Which artifacts a simulated run uploads
+- **Point (found by T012, fix round 2):** the Q-20 default left the artifacts a run produces to Q-19. The user's
+  Q-19 answer (#34) makes steps simulated and keeps the shape `{name, steps:[{name, command}]}`, but does not say
+  what, if anything, a simulated run uploads to artifact-store.
+- **Options:** (a) nothing until wave 3; (b) one fake artifact per passed build, named after the pipeline; (c) the
+  definition names its outputs (a shape change, against the user's decision); (d) a step `command` convention.
+- **Status:** `needs-decision` (issue #110), no default. `contracts/api-pipeline-runner.yml` says it is not
+  settled. Blocks the wave 2 runner-to-store upload.
