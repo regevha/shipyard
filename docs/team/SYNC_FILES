@@ -15,6 +15,7 @@ docs/team/lessons.md
 docs/tasks/README.md
 scripts/ci/check_task_scope.py
 scripts/ci/check_alembic_heads.py
+scripts/ci/check_sync_scope.py
 scripts/team/lead_lock.py
 .github/workflows/team-checks.yml
 docs/team/SYNC_FILES
