@@ -137,7 +137,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   every example in the contracts validates against its schema." The wave 1 deliverables list does not name CI.
 - **Point:** `docs/PLAN.md` calls wave 1 "contracts + CI" and plans T011 (CI) inside it. That placement is the
   lead's reading of "from day one", not a sentence of the brief.
-- **Status:** `open`. Default, **assumed, pending user**: CI is built in wave 1 (T011), because day one is wave 1.
+- **Status:** `needs-decision` (what the user meant). Default, **assumed, pending user**: CI is built in wave 1
+  (T011), because day one is wave 1.
 
 ### Q-26 Contract file formats and the checker rules
 - **Point:** the brief says what each contract file contains, not its format. OpenAPI 3.1.0 for `api-*.yml`,
@@ -153,8 +154,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   wave 2."
 - **Point:** `docs/PLAN.md` § "Waves" puts the services in wave 2 and the queue, auth, retries, persistence and
   e2e flows in wave 3. That split is the lead's outline, not the brief's.
-- **Status:** `open`. Default, **assumed, pending user**: the outline in `docs/PLAN.md`, to be confirmed before
-  wave 2 is planned in detail.
+- **Status:** `needs-decision` (what the user wants in each wave). Default, **assumed, pending user**: the outline
+  in `docs/PLAN.md`, to be confirmed before wave 2 is planned in detail.
 
 ## Ambiguities the contracts must settle (for T012)
 
