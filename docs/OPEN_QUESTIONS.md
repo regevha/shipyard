@@ -90,16 +90,20 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   outranks the synced process file.
 
 ### Q-06 Required aggregate check
-- **Facts:** `main` has no branch protection (`gh api repos/regevha/shipyard/branches/main/protection` returns
-  404 "Branch not protected", checked 2026-11-25), so no check is required today. A job can `needs:` only jobs in
+- **Facts (corrected by T015):** `main` has no classic branch protection (that API returns 404), but it has an
+  active repository ruleset, `Main1` (created 2026-11-25 20:26, read with `gh api
+  repos/regevha/shipyard/rulesets/28098519`): no deletion, no force-push, changes through a PR (0 approvals), and
+  required status checks = the four team-checks jobs, with branches required to be up to date. `ci-ok` is not
+  required. The first version of this entry (T010) said no check was required; that was wrong, because only the
+  classic protection API was checked. A job can `needs:` only jobs in
   the same workflow, so a `ci-ok` job in a new `.github/workflows/ci.yml` (T011) cannot depend on the jobs in
   `.github/workflows/team-checks.yml`, which is synced from the shared core (listed in `docs/team/SYNC_FILES`) and
   runs on `pull_request` only.
-- **Options:** (a) `ci-ok` aggregates `ci.yml` only, and branch protection requires `ci-ok` plus each
-  team-checks job by name; (b) the shared core makes team-checks a reusable workflow (`workflow_call`) that
+- **Options:** (a) `ci-ok` aggregates `ci.yml` only, and the `Main1` ruleset adds `ci-ok` to the four
+  team-checks jobs it already requires; (b) the shared core makes team-checks a reusable workflow (`workflow_call`) that
   `ci.yml` calls, so `ci-ok` covers it; (c) `ci-ok` polls the check-runs API for the head commit (fragile).
-- **Status:** `needs-decision`. Turning on branch protection is a repo admin action for the user. T011 builds
-  option (a)'s `ci-ok` either way.
+- **Status:** `needs-decision` (issue #28). Changing the ruleset is a repo admin action for the user. T011 built
+  `ci-ok` (merged in PR #51); it is green on main 50d9498 but not yet required.
 
 ### Q-07 The brief is not in the repo
 - **Point:** there was no `docs/PRODUCT.md`, and the user's brief existed only in the lead session (the lead's
