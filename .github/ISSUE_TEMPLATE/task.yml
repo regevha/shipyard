@@ -1,0 +1,52 @@
+name: Task
+description: One unit of work from docs/PLAN.md (created by architect).
+labels: ["task"]
+body:
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID
+      description: Unique across plan files, e.g. T07.
+    validations:
+      required: true
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Owner
+      options: [db-engineer, backend-dev, frontend-dev, tester, e2e-tester, devops, chore]
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Testable. Cite the AC-nn IDs from docs/PRODUCT.md when it exists.
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files touched
+      description: Complete list, including wiring files (main.py, routers, App.tsx) and lockfiles. Must match docs/tasks/Tnn.yml.
+    validations:
+      required: true
+  - type: textarea
+    id: read_first
+    attributes:
+      label: Read first
+      description: Exact files and doc sections the agent needs (from docs/tasks/Tnn.yml read_first). The agent reads only these.
+    validations:
+      required: true
+  - type: dropdown
+    id: ui
+    attributes:
+      label: UI task
+      description: Yes only if the task changes what a user sees. Gates screenshots, the browser smoke test and ux-reviewer.
+      options: ["No", "Yes"]
+    validations:
+      required: true
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      description: Linked issues for every task whose code this one imports.
