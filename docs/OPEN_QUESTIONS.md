@@ -4,14 +4,18 @@ Every conflict or unclear point found while planning Shipyard. Nothing here is s
 its sources, the options, and a status.
 
 **Statuses:** `open` (known, not yet blocking; a default may be proposed), `needs-decision` (the user must choose;
-becomes a `needs-decision` issue), `resolved-by-user-brief` (the user's brief settles it; the entry says where and
-what follow-up remains). An entry marked **T012 default: assumed, pending user** means T012 writes that default
+becomes a `needs-decision` issue), `resolved-by-user-brief` (the user's brief settles it; the entry quotes the
+sentence of `docs/BRIEF.md` that settles it, word for word, and says what follow-up remains; an entry that cannot
+quote such a sentence is never `resolved-by-user-brief`), `resolved` (settled by a repo change the entry names).
+An entry marked **T012 default: assumed, pending user** means T012 writes that default
 into the contracts, marked with `x-assumed: [Q-nn]` on the element it affects (rule in `docs/PLAN.md`
 § "Marking assumed defaults"), until the user confirms or changes it. For `needs-decision` entries the default
 is only a labelled placeholder so the contracts can be complete; it is never presented as decided.
 
-"User brief" below means the user's Shipyard brief for wave 1 as relayed by the lead in the T010 task prompt
-(issue #9). It is not yet stored as a file in the repo (see Q-07).
+"User brief" below means the user's first message to the lead session, stored verbatim in
+[`docs/BRIEF.md`](BRIEF.md) (Q-07). The first version of this file (T010) was written from the lead's T010 prompt,
+which restated the brief and added the lead's own choices; T013 checked every "brief" claim against the verbatim
+text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, Q-24, Q-25, Q-26, Q-27).
 
 ## Process and repo conflicts
 
@@ -24,7 +28,12 @@ is only a labelled placeholder so the contracts can be complete; it is never pre
   frozen contracts; for Shipyard that rule must cover `contracts/**`. The brief has no per-service data-model
   contract; environment.md's `DATA_MODEL.md` (owned by `db-engineer`) has no place in wave 1.
 - **Options:** (a) follow the brief and update environment.md's proposal and layout map; (b) keep both.
-- **Status:** `resolved-by-user-brief` (brief: wave 1 deliverables). The brief is newer and explicit. Follow-up
+- **Brief (verbatim):** "contracts/events.yml: build started, build finished (passed or failed), artifact
+  uploaded, release requested, release approved or rejected." / "contracts/api-*.yml: one file per service with
+  endpoints, request and response shapes." / "contracts/errors.yml: one shared error envelope and the status
+  codes, agreed once." The `<service>` slugs in the file names (`pipeline-runner`, `artifact-store`,
+  `release-service`, `dashboard`) come from `docs/team/environment.md` § "Decided by the user", not from the brief.
+- **Status:** `resolved-by-user-brief` (quoted above). The brief is newer and explicit. Follow-up (issue #36)
   for the lead: update `docs/team/environment.md` (devops owns it, T005) so the layout map points
   `docs/API.md` to `contracts/api-<service>.yml`, the shared contract to `contracts/events.yml` and
   `contracts/errors.yml`, says `contracts/**` is frozen like any contract, and says where per-service data models
@@ -36,7 +45,10 @@ is only a labelled placeholder so the contracts can be complete; it is never pre
   `.claude/agents/architect.md` (step 2) defaults to React + TypeScript + Vite in `web/`. The user brief: plain
   HTML pages + a little JavaScript, served by the dashboard, no build step, no React (React may be considered in
   wave 3).
-- **Status:** `resolved-by-user-brief` for the shape; React + Vite defaults do not apply. Still `open`: the UI
+- **Brief (verbatim):** "It also serves a small web frontend, so there is no fifth service. The frontend is plain
+  HTML pages with a little JavaScript to refresh the data, with no build step and no React for now; a React app
+  can be considered in wave 3 if the dashboard needs it."
+- **Status:** `resolved-by-user-brief` for the shape (quoted above); React + Vite defaults do not apply. Still `open`: the UI
   folder name and the backend-dev/frontend-dev split. Proposed for wave 2 planning: `services/dashboard/static/`
   owned by frontend-dev, served by the dashboard app owned by backend-dev. Follow-up: environment.md § "Open" and
   § "Layout map".
@@ -44,14 +56,16 @@ is only a labelled placeholder so the contracts can be complete; it is never pre
 ### Q-03 "Wave 0" decisions vs waves 1-3
 - **Conflict:** `docs/team/environment.md` (§ "Proposed by the lead", § "Open", § "Commands", § "Worktrees, ports
   and databases") defers the database engine and migration tool, the local start command, the port base and slot
-  numbering, `pyproject.toml` per service, and auth between services to "wave 0". The user brief has three waves,
-  and wave 1 is contracts only.
+  numbering, `pyproject.toml` per service, and auth between services to "wave 0". The user brief: "docs/PLAN.md
+  with the three waves" and "Wave 1 is CONTRACTS ONLY. Write no service code." (Whether CI belongs to wave 1 is
+  the lead's reading, not the brief's words: Q-25.)
 - **Options:** (a) settle them in a setup task at the start of wave 2 (they are not needed for contracts);
   (b) treat wave 1 as "wave 0" and add a task now; (c) the user decides them directly.
 - **Status:** `needs-decision`. Recommendation: (a), except inter-service auth, which affects the contracts (Q-09).
 
 ### Q-04 Issue labels
-- **Conflict:** the user brief asks for issue labels `todo`, `deferred`, `needs-decision`. `docs/team/lead.md`
+- **Conflict:** the user brief: "Every request or finding in an agent report becomes a GitHub issue labelled
+  todo, deferred or needs-decision." `docs/team/lead.md`
   § "Communication" ("Requests become issues") says `task`, `needs-decision`, `deferred`, and
   `.github/ISSUE_TEMPLATE/task.yml` applies the label `task`.
 - **Options:** (a) use `todo` in this repo and change the issue template (a synced core file); (b) keep `task`
@@ -59,10 +73,16 @@ is only a labelled placeholder so the contracts can be complete; it is never pre
 - **Status:** `needs-decision`.
 
 ### Q-05 Number of fix rounds
-- **Conflict:** the user brief caps reviewer/architect fix rounds at two. `docs/team/lead.md` § "Workflow" step 5
-  and § "Rules" say one fix round per review, then the lead decides.
-- **Unclear:** whether "two" means two fix rounds per review (fix, re-verify, fix, re-verify) or two in total for a
-  task.
+- **Brief (verbatim):** "Fix rounds are limited: if the reviewer and architect go around more than twice and the
+  contracts still disagree, stop and report to me instead of looping." Earlier versions of this entry (and the
+  lead's T010 prompt, and issue #27) said "caps fix rounds at two", which is the lead's paraphrase, not the brief.
+- **Conflict:** `docs/team/lead.md` § "Workflow" step 5 and § "Rules" say one fix round per review, then the lead
+  decides.
+- **Unclear:** what counts as "going around" (one fix + re-review = one time?), whether the limit is per review or
+  per task, and whether it covers only contract disagreements (the brief's wording) or every reviewer/architect
+  loop (how the lead applied it to T010).
+- **Default, assumed, pending user:** after two fix rounds on the same review with Blocking items still open, the
+  lead stops and reports; applied to every reviewer/architect loop, not only contracts.
 - **Options:** (a) the user's cap applies in Shipyard and is recorded as a local override; (b) change `lead.md` in
   the shared core.
 - **Status:** `needs-decision` (where to record it, and the meaning of "two"). Until then the user's instruction
@@ -81,29 +101,60 @@ is only a labelled placeholder so the contracts can be complete; it is never pre
   option (a)'s `ci-ok` either way.
 
 ### Q-07 The brief is not in the repo
-- **Point:** there is no `docs/PRODUCT.md`, and the user's brief exists only in the lead's prompt and issue #9.
-  Reviewers cannot check the contracts against it line by line.
-- **Options:** store the brief verbatim (e.g. `docs/BRIEF.md`, lead-made) or quote it in issue #9.
-- **Status:** `open` (lead follow-up).
+- **Point:** there was no `docs/PRODUCT.md`, and the user's brief existed only in the lead session (the lead's
+  T010 prompt was a restatement, not the text). Reviewers could not check the contracts against it line by line.
+- **Status:** `resolved` by T013: the brief is stored verbatim in `docs/BRIEF.md`, with its source (the user's
+  first message to the lead session, 2026-11-25 20:50 Asia/Jerusalem). The quote first posted on issue #9 left
+  out the opening words and is superseded by `docs/BRIEF.md`.
 
 ### Q-08 Task table columns
-- **Point:** the brief fixes the `docs/PLAN.md` task table columns (ID, task, acceptance command, files touched,
-  status); `.claude/agents/architect.md` step 5b also lists owner and depends-on.
-- **Status:** `resolved-by-user-brief`: the table has the brief's columns; owner and depends-on live in each
+- **Brief (verbatim):** "docs/PLAN.md with the three waves and a task table (ID, task, acceptance criterion that
+  can actually be run, files touched, status)." `.claude/agents/architect.md` step 5b also lists owner and
+  depends-on.
+- **Status:** `resolved-by-user-brief` for the five columns (quoted above); owner and depends-on live in each
   `docs/tasks/Tnn.yml`, linked from the table.
+- **Not in the brief:** that "acceptance criterion that can actually be run" means a shell command string. That is
+  the lead's reading. `open`; default, **assumed, pending user**: each criterion is a command with its expected
+  result, or is labelled as a non-command gate (e.g. a review verdict).
 
 ### Q-24 Task spec format vs `docs/tasks/README.md`
 - **Conflict:** `docs/tasks/README.md` (synced from the shared core, listed in `docs/team/SYNC_FILES`) line 15
   lists task owners as `db-engineer | backend-dev | frontend-dev | tester | e2e-tester | devops | chore`, with no
   `architect`; line 30 says `acceptance` holds `AC-nn` IDs from `docs/PRODUCT.md`. `docs/tasks/T010.yml` and
   `docs/tasks/T012.yml` have `owner: architect`, and T010-T012 list runnable command strings under `acceptance`,
-  because Shipyard has no `docs/PRODUCT.md` and the user brief asks for runnable acceptance commands.
+  because Shipyard has no `docs/PRODUCT.md` and the user brief asks for an "acceptance criterion that can actually
+  be run" (reading it as a command string is the lead's assumption, Q-08).
 - **Options:** (a) change `README.md` in the shared core (add `architect` for spec and contract tasks; allow
   command strings when there is no `PRODUCT.md`); (b) a local note in a Shipyard-only file (e.g.
   `docs/team/environment.md`) that overrides those two lines; (c) a per-repo exception list read by CI, like
   `docs/team/branch_exemptions`.
 - **Status:** `needs-decision`. CI does not check either field today (`scripts/ci/check_task_scope.py` reads only
   `files_touched`), so nothing is blocked yet.
+
+### Q-25 Is CI part of wave 1?
+- **Brief (verbatim):** "Wave 1 is CONTRACTS ONLY. Write no service code." and, separately, "Set up CI from day
+  one: a required aggregate check, a parse check that every contract and task spec is valid YAML, and a check that
+  every example in the contracts validates against its schema." The wave 1 deliverables list does not name CI.
+- **Point:** `docs/PLAN.md` calls wave 1 "contracts + CI" and plans T011 (CI) inside it. That placement is the
+  lead's reading of "from day one", not a sentence of the brief.
+- **Status:** `open`. Default, **assumed, pending user**: CI is built in wave 1 (T011), because day one is wave 1.
+
+### Q-26 Contract file formats and the checker rules
+- **Point:** the brief says what each contract file contains, not its format. OpenAPI 3.1.0 for `api-*.yml`,
+  JSON Schema 2020-12 for `events.yml`/`errors.yml`, and every rule in `docs/PLAN.md` § "Contract file format"
+  (examples rule, `x-assumed`, references, composition, the checker's libraries) are the lead's constraint and the
+  architect's design, reviewed in T010, not the user's choice.
+- **Options:** (a) keep them; (b) another format (e.g. plain YAML field lists, AsyncAPI for events).
+- **Status:** `open`. Default, **assumed, pending user**: (a).
+
+### Q-27 What waves 2 and 3 contain
+- **Brief (verbatim), the only sentences about later waves:** "A real event queue is a later wave." and "a React
+  app can be considered in wave 3 if the dashboard needs it." Plus "Stop at the end of wave 1. ... Do not start
+  wave 2."
+- **Point:** `docs/PLAN.md` § "Waves" puts the services in wave 2 and the queue, auth, retries, persistence and
+  e2e flows in wave 3. That split is the lead's outline, not the brief's.
+- **Status:** `open`. Default, **assumed, pending user**: the outline in `docs/PLAN.md`, to be confirmed before
+  wave 2 is planned in detail.
 
 ## Ambiguities the contracts must settle (for T012)
 
