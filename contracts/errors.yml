@@ -10,11 +10,12 @@ description: >
 $defs:
 
   ErrorCode:
-    x-assumed: [Q-10, Q-16, Q-17, Q-18]
+    x-assumed: [Q-18]
     description: >
-      Machine-readable error code. release_already_decided comes from the Q-10 default (one final decision per
-      release), release_not_approved from the Q-16 default (promotion blocked until approved),
-      checksum_mismatch from the Q-17 default, payload_too_large from the Q-18 default (100 MiB upload limit).
+      Machine-readable error code. release_already_decided comes from the user decision on Q-10 (#30, one final
+      decision per release), release_not_approved from the user decision on Q-16 (#32, promotion blocked until
+      approved), checksum_mismatch from the user decision on Q-17 (#33), payload_too_large from the Q-18
+      default (100 MiB upload limit).
     type: string
     enum:
       - validation_failed
@@ -88,10 +89,10 @@ x-status-codes:
     meaning: "The path exists but not with this HTTP method; emitted by the framework on any path, so no operation lists it."
   - status: 409
     code: release_already_decided
-    meaning: "The release already has a decision; decisions are final (Q-10 default, assumed, pending user)."
+    meaning: "The release already has a decision; decisions are final (user decision, Q-10, #30)."
   - status: 409
     code: release_not_approved
-    meaning: "The release is not approved, so it cannot be promoted (Q-16 default, assumed, pending user)."
+    meaning: "The release is not approved, so it cannot be promoted (user decision, Q-16, #32)."
   - status: 413
     code: payload_too_large
     meaning: "The upload is larger than 100 MiB (Q-18 default, assumed, pending user)."
@@ -100,7 +101,7 @@ x-status-codes:
     meaning: "The request (body, path, query or header) is invalid, including a body that is not valid JSON."
   - status: 422
     code: checksum_mismatch
-    meaning: "The checksum the uploader sent does not match the SHA-256 the store computed (Q-17 default, assumed, pending user)."
+    meaning: "The checksum the uploader sent does not match the SHA-256 the store computed (user decision, Q-17, #33)."
   - status: 500
     code: internal_error
     meaning: "Unexpected server error."

@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: dashboard
   version: "0.1.0"
-  x-assumed: [Q-09, Q-11, Q-23]
+  x-assumed: [Q-11, Q-23]
   description: |
     Receives events from the other three services and shows builds, artifacts, approvals and failures. It also
     serves a small web frontend (plain HTML + a little JavaScript, no build step, no React); the pages are not
@@ -11,7 +11,7 @@ info:
     The frontend fetches only this service's own JSON endpoints, built from the events it received; the
     dashboard never calls the other services (Q-23 default, assumed, pending user).
 
-    Authentication: none (Q-09 default, assumed, pending user): anyone who can reach `POST /events` can post an
+    Authentication: none in waves 1-2 (user decision, Q-09, #29): anyone who can reach `POST /events` can post an
     event. There is no security scheme.
 
     ## Who calls whom
@@ -22,19 +22,19 @@ info:
     | any client | pipeline-runner | `GET /runs/{build_id}` | to follow a run's status and steps |
     | pipeline-runner | dashboard | `POST /events` (`build.started`) | when a run's first step starts |
     | pipeline-runner | dashboard | `POST /events` (`build.finished`) | when a run ends, passed or failed |
-    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after a passed run, once per artifact (Q-20 default; which files: Q-19) |
+    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after a passed run, once per artifact (Q-20 default; which artifacts: not settled, see api-pipeline-runner.yml) |
     | artifact-store | dashboard | `POST /events` (`artifact.uploaded`) | after an upload is stored |
     | any client | artifact-store | `GET /artifacts/{name}/versions/{version}` | to download a stored version |
     | any client | release-service | `POST /releases` | to request a release of one artifact version |
     | release-service | dashboard | `POST /events` (`release.requested`) | after a release is created |
     | any client (who: Q-32) | release-service | `POST /releases/{release_id}/decision` | to approve or reject |
     | release-service | dashboard | `POST /events` (`release.decided`) | after a decision is recorded |
-    | any client (who: Q-32) | release-service | `POST /releases/{release_id}/promote` | to promote an approved release (no event: Q-14) |
+    | any client (user decision, Q-16, #32; from the dashboard pages: Q-32) | release-service | `POST /releases/{release_id}/promote` | to promote an approved release (no event: user decision, Q-14, #31) |
     | any client | release-service | `GET /releases/{release_id}` | to read one release |
     | dashboard web pages (browser) | dashboard | `GET /builds`, `GET /artifacts`, `GET /releases` | to refresh the views |
 
     No service calls pipeline-runner or release-service; artifact-store and release-service never call each
-    other (Q-16 default).
+    other (user decision, Q-16, #32).
 
     ## Event delivery (Q-11 default, assumed, pending user)
 
@@ -47,7 +47,9 @@ info:
 
     In every view, a field whose event has not arrived yet is present and null, and a list whose event has not
     arrived yet is present and empty (`[]`); no field is ever left out. The same rule (required, null = not yet)
-    holds in every contract file.
+    holds for every response and event field that has a not-yet state, in every contract file. It does not
+    cover fields that are simply optional: `error.details` in errors.yml stays optional (#106), and optional
+    request parameters are absent when not sent.
 paths:
   /events:
     post:
@@ -254,12 +256,12 @@ paths:
   /releases:
     get:
       operationId: listReleases
-      x-assumed: [Q-14, Q-15, Q-23]
+      x-assumed: [Q-15, Q-23]
       summary: Releases and their approvals, seen through release.requested and release.decided events
       description: >
         Newest first (Q-15 default), read as most recently updated first: ordered by the `occurred_at` of the
         latest event received for each release, descending. This reading of the default is the architect's, not
-        part of Q-15's text. Promotion is not shown: there is no promotion event (Q-14 default; Q-31).
+        part of Q-15's text. Promotion is not shown: there is no promotion event (user decision, Q-14, #31; Q-31).
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
@@ -323,7 +325,9 @@ components:
         `occurred_at`; each is null until that event arrives. `pipeline_name` comes from whichever event arrived.
         `steps` and `failed_step` come from build.finished ([] and null before it). The anyOf is the state table
         the schema enforces: running means `finished_at` and `failed_step` are null and `steps` is []; passed
-        means `finished_at` is set and `failed_step` is null; failed means both are set.
+        means `finished_at` is set, `failed_step` is null and `steps` is events.yml PassedRunSteps; failed means
+        both are set and `steps` is events.yml FailedRunSteps. PassedRunSteps and FailedRunSteps are the same
+        schemas build.finished and pipeline-runner's Run use, so all three accept the same step lists.
       type: object
       additionalProperties: false
       required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, steps]
@@ -368,7 +372,7 @@ components:
             failed_step:
               type: "null"
             steps:
-              minItems: 1
+              $ref: "events.yml#/$defs/PassedRunSteps"
         - properties:
             status:
               const: failed
@@ -377,7 +381,7 @@ components:
             failed_step:
               $ref: "events.yml#/$defs/StepName"
             steps:
-              minItems: 1
+              $ref: "events.yml#/$defs/FailedRunSteps"
       examples:
         - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
@@ -388,14 +392,14 @@ components:
           steps: []
 
     ReleaseView:
-      x-assumed: [Q-11, Q-14, Q-23]
+      x-assumed: [Q-11, Q-23]
       description: >
         A release as the dashboard knows it from events. `status` is `pending` after release.requested only, else
         release.decided's `decision`. `requested_at` is null until release.requested arrives; `decided_by` and
         `decided_at` are null until release.decided arrives. `artifact` comes from whichever event arrived. The
         anyOf is the state table the schema enforces: pending means `decided_by` and `decided_at` are null;
         approved or rejected means both are set. There is no promotion field, because there is no promotion
-        event (Q-14 default; Q-31).
+        event (user decision, Q-14, #31; Q-31).
       type: object
       additionalProperties: false
       required: [release_id, artifact, status, requested_at, decided_by, decided_at]

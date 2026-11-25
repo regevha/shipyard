@@ -2,7 +2,6 @@ openapi: 3.1.0
 info:
   title: release-service
   version: "0.1.0"
-  x-assumed: [Q-09]
   description: >
     Holds a release request, records an approve or reject decision with who and when, and blocks promotion
     until approved.
@@ -10,25 +9,26 @@ info:
 
     Calls it makes (see the table in api-dashboard.yml): it POSTs `release.requested` after a release is created
     and `release.decided` after a decision, to the dashboard's `POST /events`. It does not call artifact-store
-    to check that the referenced artifact exists (Q-16 default). There is no promotion event (Q-14 default).
+    to check that the referenced artifact exists (user decision, Q-16, #32). There is no promotion event (user
+    decision, Q-14, #31).
 
 
-    Rules (Q-10 and Q-16 defaults, needs-decision: placeholders, not decided): a release references one artifact
+    Rules (user decisions, Q-10, #30 and Q-16, #32): a release references one artifact
     by name + version; the decision body carries `decided_by` (free string) and the server sets `decided_at`;
     one decision per release, and it is final (a second decision is 409 release_already_decided); a rejected
     release stays rejected and a new release is requested instead; there is no self-approval rule; promotion is
-    a recorded state change only (`promoted_at`) and is 409 release_not_approved unless the release is approved.
-    Who calls the decision and promote endpoints, and what a second promote of an already promoted release
-    returns, are not settled (Q-31, Q-32).
+    a recorded state change only (`promoted_at`) and is 409 release_not_approved unless the release is approved;
+    any client may call promote. Not settled: who calls the decision endpoint, and whether the dashboard pages
+    may call these endpoints from the browser (Q-32); what a second promote of an already promoted release
+    returns (Q-31).
 
 
-    Authentication: none (Q-09 default, assumed, pending user), so `decided_by` is whatever the caller sends.
-    There is no security scheme.
+    Authentication: none in waves 1-2 (trusted local network), revisited in wave 3 (user decision, Q-09, #29),
+    so `decided_by` is whatever the caller sends. There is no security scheme.
 paths:
   /releases:
     post:
       operationId: requestRelease
-      x-assumed: [Q-16]
       summary: Request a release of one artifact version
       description: Creates a release with status `pending` and answers 201.
       requestBody:
@@ -100,7 +100,6 @@ paths:
   /releases/{release_id}/decision:
     post:
       operationId: decideRelease
-      x-assumed: [Q-10]
       summary: Record the approve or reject decision
       description: >
         Records the decision, who made it (`decided_by`, as sent) and when (`decided_at`, set by the server), and
@@ -145,7 +144,6 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          x-assumed: [Q-10]
           description: The release already has a decision (release_already_decided).
           content:
             application/json:
@@ -164,12 +162,11 @@ paths:
   /releases/{release_id}/promote:
     post:
       operationId: promoteRelease
-      x-assumed: [Q-14, Q-16]
       summary: Promote an approved release
       description: >
         Records `promoted_at` and answers 200 with the release; no request body. 409 release_not_approved unless
-        the release status is `approved` (Q-16 default). What a second promote of a release that already has
-        `promoted_at` returns is not settled (Q-31). No event is sent for a promotion (Q-14 default). Error
+        the release status is `approved` (user decision, Q-16, #32). What a second promote of a release that already has
+        `promoted_at` returns is not settled (Q-31). No event is sent for a promotion (user decision, Q-14, #31). Error
         precedence: 422 for a malformed path parameter, then 404, then 409.
       parameters:
         - $ref: "#/components/parameters/ReleaseId"
@@ -195,7 +192,6 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          x-assumed: [Q-16]
           description: The release is pending or rejected (release_not_approved).
           content:
             application/json:
@@ -224,9 +220,9 @@ components:
 
   schemas:
     ReleaseRequest:
-      x-assumed: [Q-16, Q-30]
+      x-assumed: [Q-30]
       description: >
-        Body of a release request: the one artifact version to release (Q-16 default). Who requests is not
+        Body of a release request: the one artifact version to release (user decision, Q-16, #32). Who requests is not
         recorded (Q-30 default, needs-decision: placeholder, not decided).
       type: object
       additionalProperties: false
@@ -240,8 +236,7 @@ components:
             version: 3
 
     DecisionRequest:
-      x-assumed: [Q-10]
-      description: Body of a decision (Q-10 default). `decided_at` is set by the server, never sent.
+      description: Body of a decision (user decision, Q-10, #30). `decided_at` is set by the server, never sent.
       type: object
       additionalProperties: false
       required: [decision, decided_by]
@@ -255,23 +250,23 @@ components:
           decided_by: dana
 
     ReleaseStatus:
-      x-assumed: [Q-10, Q-13]
+      x-assumed: [Q-13]
       description: >
         `pending` until a decision is recorded, then the decision (events.yml Decision, referenced, not copied),
-        which is final (Q-10 default). The dashboard uses this schema for its release view.
+        which is final (user decision, Q-10, #30). The dashboard uses this schema for its release view.
       anyOf:
         - const: pending
         - $ref: "events.yml#/$defs/Decision"
       examples: [pending, approved]
 
     Release:
-      x-assumed: [Q-10, Q-16, Q-30]
+      x-assumed: [Q-30]
       description: >
         One release. Fields not known yet are present and null. The anyOf is the state table the schema
         enforces: pending means `decided_by`, `decided_at` and `promoted_at` are null; approved means
         `decided_by` and `decided_at` are set and `promoted_at` is null until promoted; rejected means
         `decided_by` and `decided_at` are set and `promoted_at` is null (only an approved release can be
-        promoted, Q-16 default). There is no requester field (Q-30 default).
+        promoted, user decision, Q-16, #32). There is no requester field (Q-30 default).
       type: object
       additionalProperties: false
       required: [release_id, artifact, status, requested_at, decided_by, decided_at, promoted_at]

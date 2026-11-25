@@ -6,7 +6,9 @@ its sources, the options, and a status.
 **Statuses:** `open` (known, not yet blocking; a default may be proposed), `needs-decision` (the user must choose;
 becomes a `needs-decision` issue), `resolved-by-user-brief` (the user's brief settles it; the entry quotes the
 sentence of `docs/BRIEF.md` that settles it, word for word, and says what follow-up remains; an entry that cannot
-quote such a sentence is never `resolved-by-user-brief`), `resolved` (settled by a repo change the entry names).
+quote such a sentence is never `resolved-by-user-brief`), `resolved` (settled by a repo change the entry names),
+`answered-by-user` (the user answered the question after the brief; the entry gives the date and the issue, and
+quotes the user's words as a blockquote; contracts drop `x-assumed` for it).
 An entry marked **T012 default: assumed, pending user** means T012 writes that default
 into the contracts, marked with `x-assumed: [Q-nn]` on the element it affects (rule in `docs/PLAN.md`
 § "Marking assumed defaults"), until the user confirms or changes it. For `needs-decision` entries the default
@@ -170,16 +172,23 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   release-service can approve.
 - **Options:** (a) none in waves 1-2 (trusted local network), added in wave 3; (b) a shared bearer token per
   service; (c) mTLS.
-- **Status:** `needs-decision`. T012 default, **assumed, pending user**: (a), with no security scheme in the
-  OpenAPI files and a note in each `info.description`.
+- **Status:** `answered-by-user` (2026-11-25, issue #29): option (a), the former T012 default. The OpenAPI files
+  have no security scheme and say so in each `info.description`; `x-assumed: [Q-09]` is removed.
+- **User decision (2026-11-25, #29):**
+
+  > #29 (Q-09) Auth between services: none in waves 1-2 (trusted local network); revisit in wave 3.
 
 ### Q-10 Who approves, and how "who" is known
 - **Point:** release-service records "who and when". Without auth (Q-09), "who" is whatever the caller sends.
   Also unclear: may the requester approve their own release; can a decision be changed; can a rejected release be
   re-requested.
-- **Status:** `needs-decision`. T012 default, **assumed, pending user**: the decision body carries `decided_by`
-  (free string) and the server sets `decided_at`; one decision per release, final (a second decision is 409);
-  a rejected release stays rejected, and a new release request is made instead; no self-approval rule.
+- **Status:** `answered-by-user` (2026-11-25, issue #30): the former T012 default is kept. The decision body
+  carries `decided_by` (free string) and the server sets `decided_at`; one decision per release, final (a second
+  decision is 409); a rejected release stays rejected, and a new release request is made instead; no
+  self-approval rule. `x-assumed: [Q-10]` is removed from the contracts.
+- **User decision (2026-11-25, #30):**
+
+  > #30 (Q-10) Approvals: keep the T012 default. decided_by is a free string, server sets decided_at, one final decision per release (a second is 409), rejected stays rejected (re-request = new release), no self-approval rule.
 
 ### Q-11 Event delivery semantics
 - **Point:** the brief says the three services POST events to the dashboard, but not: whether a sender waits,
@@ -203,9 +212,12 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 ### Q-14 Events not in the brief's list
 - **Point:** the runner "reports each step", release-service "blocks promotion", and the dashboard shows
   "failures", but the brief's event list has no step event, no promotion event and no upload-failure event.
-- **Status:** `needs-decision`. T012 default, **assumed, pending user**: only the brief's five kinds; step
-  results go in `build.finished.data.steps` (with the failing step, if any) and in the runner's own API; no
-  promotion event.
+- **Status:** `answered-by-user` (2026-11-25, issue #31): the former T012 default. Only the brief's five kinds;
+  step results go in `build.finished.data.steps` (with the failing step, if any) and in the runner's own API; no
+  promotion event and no step events. `x-assumed: [Q-14]` is removed from the contracts.
+- **User decision (2026-11-25, #31):**
+
+  > #31 (Q-14) Events: only the five kinds in the brief. Step results inside build.finished.data.steps and the runner API; no promotion event, no step events.
 
 ### Q-15 IDs, timestamps and pagination
 - **Status:** `open`. T012 default, **assumed, pending user**: IDs are UUID strings (`format: uuid`) assigned by
@@ -216,19 +228,26 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Point:** there is no deploy target and no fifth service. Unclear: what promotion does (a state change only,
   or a call to some deploy step), who calls it (a person through the dashboard, the runner, an external tool), and
   what a release points at (a build, an artifact version, or both).
-- **Status:** `needs-decision`. T012 default, **assumed, pending user**: release-service has
+- **Status:** `answered-by-user` (2026-11-25, issue #32): the former T012 default is kept. release-service has
   `POST /releases/{id}/promote`; it returns 409 unless the release is approved and records `promoted_at`;
-  promotion is a recorded state change only; a release references one artifact (name + version); the caller is
-  any client, including the dashboard UI; release-service does not call artifact-store to check the artifact
-  exists.
+  promotion is a recorded state change only; a release references one artifact (name + version); any client may
+  call it; release-service does not call artifact-store to check the artifact exists. `x-assumed: [Q-16]` is
+  removed from the contracts. Whether the dashboard pages may call it from the browser remains open (Q-32).
+- **User decision (2026-11-25, #32):**
+
+  > #32 (Q-16) Promotion: keep the T012 default. POST /releases/{id}/promote, 409 unless approved, records promoted_at, state change only; a release references one artifact (name + version); any client may call it; no existence check against artifact-store.
 
 ### Q-17 Artifact version and checksum
 - **Point:** "stores them with a version and checksum": who assigns the version (the runner, from the build, or
   the store, per artifact name), its format (integer, semver, build ID), the checksum algorithm, and what a
   re-upload of the same name and version does.
-- **Status:** `needs-decision`. T012 default, **assumed, pending user**: the store assigns an integer version per
-  artifact name, starting at 1; SHA-256 hex computed by the store; the uploader may send the expected checksum and
-  a mismatch is 422; the upload records the `build_id` it came from.
+- **Status:** `answered-by-user` (2026-11-25, issue #33): the former T012 default is kept. The store assigns an
+  integer version per artifact name, starting at 1; SHA-256 hex computed by the store; the uploader may send the
+  expected checksum and a mismatch is 422; the upload records the `build_id` it came from. `x-assumed: [Q-17]` is
+  removed from the contracts.
+- **User decision (2026-11-25, #33):**
+
+  > #33 (Q-17) Artifacts: keep the T012 default. Store assigns an integer version per name from 1; SHA-256 hex computed by the store; optional expected checksum, mismatch 422; upload records build_id.
 
 ### Q-18 Artifact upload format and limits
 - **Status:** `open`. T012 default, **assumed, pending user**: raw body (`application/octet-stream`), artifact
@@ -240,8 +259,13 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   shell commands on the runner host is a security decision.
 - **Options:** (a) steps are shell commands executed on the runner host; (b) steps are simulated (each step
   declares an outcome or duration) until wave 3; (c) a restricted command list.
-- **Status:** `needs-decision`. T012 default, **assumed, pending user** for the shape only: JSON body
-  `{name, steps: [{name, command}]}`; execution semantics left to the user's decision before wave 2.
+- **Status:** `answered-by-user` (2026-11-25, issue #34): steps are simulated until wave 3, a variant of option
+  (b) that keeps the shape `{name, steps: [{name, command}]}` (no per-step outcome field). The runner records
+  each `command` and never executes it, and fakes each step's result. `x-assumed: [Q-19]` is removed from the
+  contracts. How a faked step comes out failed is not decided: Q-33 (issue #107).
+- **User decision (2026-11-25, #34):**
+
+  > #34 (Q-19) Pipeline steps: simulated until wave 3 (no real shell commands). Shape stays {name, steps:[{name, command}]}; the runner fakes each step's result.
 
 ### Q-20 Run lifecycle
 - **Status:** `open`. T012 default, **assumed, pending user**: `POST /runs` returns 202 with the run ID and runs
@@ -296,20 +320,34 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   Choosing (a) later is a contract change.
 
 ### Q-31 Promoting twice, and promotion on the dashboard
-- **Point (found by T012):** the Q-16 default returns 409 unless the release is approved and records
+- **Point (found by T012):** the user's Q-16 decision (#32) returns 409 unless the release is approved and records
   `promoted_at`; it does not say what a second promote of an approved, already promoted release returns (200 and
-  unchanged, 200 with a new time, or 409). Separately, the Q-14 default has no promotion event, so the dashboard
-  cannot show whether a release was promoted, although the brief's blocking of promotion is the point of
-  release-service.
+  unchanged, 200 with a new time, or 409). This part is open.
+- **Settled by the user, consequence noted:** the user's Q-14 decision (#31) has no promotion event, so the
+  dashboard cannot show whether a release was promoted, although the brief's blocking of promotion is the point
+  of release-service. That follows from the decision and is not reopened here; showing promotions on the
+  dashboard would need the user to revisit Q-14.
 - **Status:** `open`, no default. The contracts leave the second promote unspecified (said in the operation's
   description) and the dashboard's release view has no promotion field.
 
 ### Q-32 Who calls decision and promote, and from where
-- **Point (found by T012):** the Q-16 default says any client, including the dashboard UI, may call promote; the
-  Q-23 default says the frontend fetches only the dashboard's own endpoints and the dashboard never calls the
-  other services. If people approve, reject or promote from the dashboard pages, the browser either calls
+- **Point (found by T012):** the user's Q-16 decision (#32) says any client may call promote (decided). The Q-23
+  default (still assumed, pending user) says the frontend fetches only the dashboard's own endpoints and the
+  dashboard never calls the other services. The clash below remains open. If people approve, reject or promote from the dashboard pages, the browser either calls
   release-service directly (needs CORS, and the pages need release-service's address) or the dashboard forwards
   the call (the dashboard then calls another service, against Q-23). Nothing says who calls the decision endpoint
   at all.
 - **Status:** `open`, no default. The contracts list the caller as any client and add no dashboard write
   endpoint; the who-calls-whom table in `contracts/api-dashboard.yml` points here.
+
+### Q-33 How a simulated step comes out failed
+- **Point (follows from the user's Q-19 decision, #34):** steps are simulated until wave 3, the shape stays
+  `{name, steps: [{name, command}]}`, and the runner fakes each step's result. Not said: how a faked step comes out
+  failed. Without a way to fail, `build.finished` with outcome failed and the dashboard's failures view can never
+  occur in waves 1-2.
+- **Options (the shape stays as the user set it):** (a) every step passes (failures untestable until wave 3);
+  (b) a convention inside `command`, for example a command of exactly `fail` fails and anything else passes;
+  (c) random with a fixed seed or rate (non-deterministic tests); (d) change the shape after all, for example an
+  optional per-step `simulate: passed|failed` (contradicts the decision that the shape stays).
+- **Status:** `needs-decision` (issue #107), no default. The contracts fix no mechanism; `contracts/api-pipeline-runner.yml`
+  says this is open. Blocks wave 2 runner behaviour, not the wave 1 contract shape.

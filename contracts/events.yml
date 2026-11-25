@@ -271,7 +271,7 @@ $defs:
         pipeline_name: shipyard-api
 
   BuildFinishedData:
-    x-assumed: [Q-14, Q-20]
+    x-assumed: [Q-20]
     description: >
       Payload of build.finished. The anyOf below is the state table the schema enforces: outcome passed means
       `failed_step` is null and every step passed; outcome failed means `failed_step` is a step name and exactly
@@ -289,9 +289,8 @@ $defs:
       outcome:
         $ref: "#/$defs/BuildOutcome"
       steps:
-        x-assumed: [Q-14]
         description: >
-          Result of every step of the definition, in definition order (Q-14 default). In a finished run a step
+          Result of every step of the definition, in definition order (user decision, Q-14, #31). In a finished run a step
           is only passed, failed or skipped.
         type: array
         minItems: 1
@@ -301,7 +300,7 @@ $defs:
             status:
               enum: [passed, failed, skipped]
       failed_step:
-        x-assumed: [Q-14, Q-20]
+        x-assumed: [Q-20]
         description: Name of the step that failed; null when the outcome is passed.
         anyOf:
           - $ref: "#/$defs/StepName"
@@ -313,23 +312,14 @@ $defs:
           failed_step:
             type: "null"
           steps:
-            items:
-              properties:
-                status:
-                  const: passed
+            $ref: "#/$defs/PassedRunSteps"
       - properties:
           outcome:
             const: failed
           failed_step:
             $ref: "#/$defs/StepName"
           steps:
-            contains:
-              required: [status]
-              properties:
-                status:
-                  const: failed
-            minContains: 1
-            maxContains: 1
+            $ref: "#/$defs/FailedRunSteps"
     examples:
       - build_id: 9e8d7c6b-5a49-4382-a716-05f4e3d2c104
         pipeline_name: shipyard-api
@@ -429,15 +419,13 @@ $defs:
     examples: ["2026-11-25T10:00:00Z"]
 
   PipelineName:
-    x-assumed: [Q-19]
-    description: The `name` of the pipeline definition the run was started with (Q-19 default shape).
+    description: The `name` of the pipeline definition the run was started with (user decision, Q-19, #34).
     type: string
     minLength: 1
     examples: [shipyard-api]
 
   StepName:
-    x-assumed: [Q-19]
-    description: The `name` of a step in the pipeline definition (Q-19 default shape).
+    description: The `name` of a step in the pipeline definition (user decision, Q-19, #34).
     type: string
     minLength: 1
     examples: [test]
@@ -460,9 +448,9 @@ $defs:
     examples: [passed]
 
   StepResult:
-    x-assumed: [Q-14, Q-20]
+    x-assumed: [Q-20]
     description: >
-      Result of one step, used in build.finished (Q-14 default) and in pipeline-runner's run resource (Q-20
+      Result of one step, used in build.finished (user decision, Q-14, #31) and in pipeline-runner's run resource (Q-20
       default). Both timestamps are always present and null means not yet (or never): pending and skipped steps
       have both null, a running step has `started_at` only, a passed or failed step has both. The anyOf
       enforces this.
@@ -518,6 +506,60 @@ $defs:
         started_at: "2026-11-25T11:00:00Z"
         finished_at: null
 
+  PassedRunSteps:
+    x-assumed: [Q-20]
+    description: >
+      The steps of a run whose outcome is passed: at least one step, every step passed. The single definition
+      used by build.finished (BuildFinishedData), pipeline-runner's Run and the dashboard's BuildView, so the
+      three accept exactly the same step lists for a passed run.
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/StepResult"
+      properties:
+        status:
+          const: passed
+    examples:
+      - - name: install
+          status: passed
+          started_at: "2026-11-25T10:00:00Z"
+          finished_at: "2026-11-25T10:01:30Z"
+
+  FailedRunSteps:
+    x-assumed: [Q-20]
+    description: >
+      The steps of a run whose outcome is failed: at least one step, each passed, failed or skipped, exactly
+      one failed (the run stops at the first failed step, Q-20 default). Not checkable in JSON Schema, but
+      required: the steps before the failed one passed and the steps after it are skipped. The single
+      definition used by BuildFinishedData, Run and BuildView.
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/StepResult"
+      properties:
+        status:
+          enum: [passed, failed, skipped]
+    contains:
+      required: [status]
+      properties:
+        status:
+          const: failed
+    minContains: 1
+    maxContains: 1
+    examples:
+      - - name: install
+          status: passed
+          started_at: "2026-11-25T11:00:00Z"
+          finished_at: "2026-11-25T11:01:10Z"
+        - name: test
+          status: failed
+          started_at: "2026-11-25T11:01:10Z"
+          finished_at: "2026-11-25T11:02:05Z"
+        - name: package
+          status: skipped
+          started_at: null
+          finished_at: null
+
   ArtifactName:
     description: >
       Artifact name as chosen by the uploader; used as a path segment in artifact-store. Allowed characters are
@@ -527,22 +569,19 @@ $defs:
     examples: [shipyard-api]
 
   ArtifactVersion:
-    x-assumed: [Q-17]
-    description: Integer version assigned by artifact-store per artifact name, starting at 1 (Q-17 default).
+    description: Integer version assigned by artifact-store per artifact name, starting at 1 (user decision, Q-17, #33).
     type: integer
     minimum: 1
     examples: [3]
 
   Checksum:
-    x-assumed: [Q-17]
-    description: SHA-256 of the artifact bytes as 64 lowercase hex characters, computed by artifact-store (Q-17 default).
+    description: SHA-256 of the artifact bytes as 64 lowercase hex characters, computed by artifact-store (user decision, Q-17, #33).
     type: string
     pattern: "^[0-9a-f]{64}$"
     examples: [9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08]
 
   ArtifactRef:
-    x-assumed: [Q-16]
-    description: Points at one stored artifact version by name + version (what a release references, Q-16 default).
+    description: Points at one stored artifact version by name + version (what a release references, user decision, Q-16, #32).
     type: object
     additionalProperties: false
     required: [name, version]
@@ -556,10 +595,9 @@ $defs:
         version: 3
 
   Artifact:
-    x-assumed: [Q-17]
     description: >
       Metadata of one stored artifact version: the data of artifact.uploaded and the body artifact-store
-      returns for an upload. `build_id` is the run it came from (Q-17 default); artifact-store records it as
+      returns for an upload. `build_id` is the run it came from (user decision, Q-17, #33); artifact-store records it as
       sent and does not check it with pipeline-runner.
     type: object
     additionalProperties: false
@@ -597,10 +635,10 @@ $defs:
     examples: [approved]
 
   Actor:
-    x-assumed: [Q-09, Q-10]
     description: >
-      Who made a decision, as a free string sent by the caller. There is no authentication (Q-09 default), so
-      release-service records the value as sent and does not verify it (Q-10 default).
+      Who made a decision, as a free string sent by the caller. There is no authentication in waves 1-2 (user
+      decision, Q-09, #29), so release-service records the value as sent and does not verify it (user decision,
+      Q-10, #30).
     type: string
     minLength: 1
     examples: [dana]
