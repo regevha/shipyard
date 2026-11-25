@@ -1,0 +1,49 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "P=\"$CLAUDE_PROJECT_DIR/scripts/team/lead_lock.py\"; [ -f \"$P\" ] || exit 0; python3 \"$P\" hook-session-start",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "P=\"$CLAUDE_PROJECT_DIR/scripts/team/lead_lock.py\"; [ -f \"$P\" ] || exit 0; python3 \"$P\" hook-pre-bash",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "P=\"$CLAUDE_PROJECT_DIR/scripts/team/lead_lock.py\"; [ -f \"$P\" ] || exit 0; python3 \"$P\" hook-heartbeat",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "P=\"$CLAUDE_PROJECT_DIR/scripts/team/lead_lock.py\"; [ -f \"$P\" ] || exit 0; python3 \"$P\" hook-session-end",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
