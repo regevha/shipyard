@@ -1,0 +1,19 @@
+id: T005
+title: Shipyard environment.md (stack, layout map, ports)
+owner: devops
+branch: T005-shipyard-environment
+mode: direct
+ui: false
+wave: 0
+depends_on: []
+migration: false
+acceptance: []
+read_first:
+  - docs/team/lead.md
+  - docs/tasks/README.md
+files_touched:
+  - docs/team/environment.md
+summary: >
+  Shipyard's own environment file (not synced from the core): the stack decisions made so far, the open
+  decisions left to wave 0, a map from the synced files' server/ and web/ paths to services/<name>/, and
+  port and database rules for several services running at once.
