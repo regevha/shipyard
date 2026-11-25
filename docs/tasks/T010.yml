@@ -1,0 +1,27 @@
+id: T010
+title: Wave 1 plan, contract file format, task specs and open questions
+owner: architect
+branch: spec-T010-wave1-plan
+mode: team
+ui: false
+wave: 1
+depends_on: []
+migration: false
+issue: 9
+read_first:
+  - docs/team/environment.md
+  - docs/tasks/README.md
+  - docs/tasks/T005.yml
+files_touched:
+  - docs/PLAN.md
+  - docs/OPEN_QUESTIONS.md
+  - docs/tasks/T010.yml
+  - docs/tasks/T011.yml
+  - docs/tasks/T012.yml
+acceptance:
+  - "python3 -c \"import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('docs/tasks/*.yml')]; print('ok')\"  # prints ok"
+  - "python3 -c \"import yaml; a,b=(set(yaml.safe_load(open(f'docs/tasks/{t}.yml'))['files_touched']) for t in ('T011','T012')); assert not a&b, a&b; print('disjoint')\"  # prints disjoint"
+  - "grep -q '^## Contract file format' docs/PLAN.md && test -f docs/OPEN_QUESTIONS.md  # exits 0"
+summary: >
+  docs/PLAN.md (wave 1 goals and non-goals, the three waves, the contract file format that T011 and T012 both
+  follow, task table), task specs T010-T012, and docs/OPEN_QUESTIONS.md. No contracts and no code.
