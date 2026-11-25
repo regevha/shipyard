@@ -164,13 +164,13 @@ paths:
   /releases/{release_id}/promote:
     post:
       operationId: promoteRelease
-      x-assumed: [Q-16]
+      x-assumed: [Q-14, Q-16]
       summary: Promote an approved release
       description: >
         Records `promoted_at` and answers 200 with the release; no request body. 409 release_not_approved unless
         the release status is `approved` (Q-16 default). What a second promote of a release that already has
-        `promoted_at` returns is not settled (Q-31). Error precedence: 422 for a malformed path parameter, then
-        404, then 409.
+        `promoted_at` returns is not settled (Q-31). No event is sent for a promotion (Q-14 default). Error
+        precedence: 422 for a malformed path parameter, then 404, then 409.
       parameters:
         - $ref: "#/components/parameters/ReleaseId"
       responses:
@@ -224,10 +224,10 @@ components:
 
   schemas:
     ReleaseRequest:
-      x-assumed: [Q-16]
+      x-assumed: [Q-16, Q-30]
       description: >
         Body of a release request: the one artifact version to release (Q-16 default). Who requests is not
-        recorded; that is not settled (Q-30).
+        recorded (Q-30 default, needs-decision: placeholder, not decided).
       type: object
       additionalProperties: false
       required: [artifact]
@@ -257,17 +257,21 @@ components:
     ReleaseStatus:
       x-assumed: [Q-10, Q-13]
       description: >
-        `pending` until a decision is recorded, then the decision (`approved` or `rejected`, the values of
-        events.yml Decision), which is final (Q-10 default). The dashboard uses this schema for its release view.
-      type: string
-      enum: [pending, approved, rejected]
-      examples: [pending]
+        `pending` until a decision is recorded, then the decision (events.yml Decision, referenced, not copied),
+        which is final (Q-10 default). The dashboard uses this schema for its release view.
+      anyOf:
+        - const: pending
+        - $ref: "events.yml#/$defs/Decision"
+      examples: [pending, approved]
 
     Release:
-      x-assumed: [Q-10, Q-16]
+      x-assumed: [Q-10, Q-16, Q-30]
       description: >
-        One release. `decided_by` and `decided_at` are null while pending; `promoted_at` is null until promoted
-        (only possible when approved, Q-16 default).
+        One release. Fields not known yet are present and null. The anyOf is the state table the schema
+        enforces: pending means `decided_by`, `decided_at` and `promoted_at` are null; approved means
+        `decided_by` and `decided_at` are set and `promoted_at` is null until promoted; rejected means
+        `decided_by` and `decided_at` are set and `promoted_at` is null (only an approved release can be
+        promoted, Q-16 default). There is no requester field (Q-30 default).
       type: object
       additionalProperties: false
       required: [release_id, artifact, status, requested_at, decided_by, decided_at, promoted_at]
@@ -292,6 +296,32 @@ components:
           anyOf:
             - $ref: "events.yml#/$defs/Timestamp"
             - type: "null"
+      anyOf:
+        - properties:
+            status:
+              const: pending
+            decided_by:
+              type: "null"
+            decided_at:
+              type: "null"
+            promoted_at:
+              type: "null"
+        - properties:
+            status:
+              const: approved
+            decided_by:
+              $ref: "events.yml#/$defs/Actor"
+            decided_at:
+              $ref: "events.yml#/$defs/Timestamp"
+        - properties:
+            status:
+              const: rejected
+            decided_by:
+              $ref: "events.yml#/$defs/Actor"
+            decided_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            promoted_at:
+              type: "null"
       examples:
         - release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
           artifact:

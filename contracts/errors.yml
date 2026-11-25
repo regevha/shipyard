@@ -5,7 +5,8 @@ description: >
   The one error body every Shipyard service returns for every 4xx and 5xx response, and the list of status codes
   with their machine-readable codes (x-status-codes). FastAPI's default `{"detail": ...}` bodies and its
   HTTPValidationError schema are replaced in wave 2 (Q-21). Request validation errors, including a body that is
-  not valid JSON, are 422 validation_failed.
+  not valid JSON, are 422 validation_failed. 405 method_not_allowed is emitted by the framework on any path when
+  the path exists but the method does not; it uses this envelope too, and no operation lists it.
 $defs:
 
   ErrorCode:
@@ -18,6 +19,7 @@ $defs:
     enum:
       - validation_failed
       - not_found
+      - method_not_allowed
       - release_already_decided
       - release_not_approved
       - checksum_mismatch
@@ -81,6 +83,9 @@ x-status-codes:
   - status: 404
     code: not_found
     meaning: "The resource in the path does not exist."
+  - status: 405
+    code: method_not_allowed
+    meaning: "The path exists but not with this HTTP method; emitted by the framework on any path, so no operation lists it."
   - status: 409
     code: release_already_decided
     meaning: "The release already has a decision; decisions are final (Q-10 default, assumed, pending user)."

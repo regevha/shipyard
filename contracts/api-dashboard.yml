@@ -40,8 +40,14 @@ info:
 
     `POST /events` answers 202 once the event is accepted. Senders retry on network errors and 5xx with backoff,
     and a delivery failure never changes a build, upload or release outcome. An `event_id` already accepted is
-    ignored and still answered 202. Events may arrive out of order; the dashboard orders by `occurred_at`, and
-    a view field whose event has not arrived yet is null.
+    ignored and still answered 202, even if its body differs from the first one: the first accepted body wins.
+    Events may arrive out of order; the dashboard orders by `occurred_at` everywhere.
+
+    ## Views built from events
+
+    In every view, a field whose event has not arrived yet is present and null, and a list whose event has not
+    arrived yet is present and empty (`[]`); no field is ever left out. The same rule (required, null = not yet)
+    holds in every contract file.
 paths:
   /events:
     post:
@@ -51,7 +57,8 @@ paths:
       description: >
         The body is any one event of events.yml (its root schema). A body that is not exactly one valid event,
         including an unknown `type`, a `source` that does not match the type, or an unknown field, is 422
-        validation_failed. A repeated `event_id` is 202 and changes nothing (Q-11 default).
+        validation_failed. A repeated `event_id` is 202 and changes nothing, even when the repeated body differs
+        from the first one: the first accepted body wins and later ones are ignored (Q-11 default).
       requestBody:
         required: true
         content:
@@ -90,6 +97,10 @@ paths:
                         status: failed
                         started_at: "2026-11-25T11:01:10Z"
                         finished_at: "2026-11-25T11:02:05Z"
+                      - name: package
+                        status: skipped
+                        started_at: null
+                        finished_at: null
               artifact-uploaded:
                 value:
                   event_id: 1d2e3f40-5a6b-4c7d-8e9f-a0b1c2d3e405
@@ -158,8 +169,9 @@ paths:
       x-assumed: [Q-15, Q-23]
       summary: Builds seen through build.started and build.finished events
       description: >
-        Newest first by the `occurred_at` of the latest event received for each build (Q-15 default). Filter
-        `status=failed` gives the failures view.
+        Newest first (Q-15 default), read as most recently updated first: ordered by the `occurred_at` of the
+        latest event received for each build, descending. This reading of the default is the architect's, not
+        part of Q-15's text. Filter `status=failed` gives the failures view.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
@@ -195,6 +207,10 @@ paths:
                             status: failed
                             started_at: "2026-11-25T11:01:10Z"
                             finished_at: "2026-11-25T11:02:05Z"
+                          - name: package
+                            status: skipped
+                            started_at: null
+                            finished_at: null
                     limit: 50
                     offset: 0
         "422":
@@ -206,7 +222,9 @@ paths:
       operationId: listArtifacts
       x-assumed: [Q-15, Q-23]
       summary: Artifact versions seen through artifact.uploaded events
-      description: Newest first by `uploaded_at` (Q-15 default).
+      description: >
+        Newest first (Q-15 default) by `uploaded_at`, which equals the artifact.uploaded event's `occurred_at`
+        and is the only event for an artifact version, so this is the same ordering as for builds and releases.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
@@ -236,11 +254,12 @@ paths:
   /releases:
     get:
       operationId: listReleases
-      x-assumed: [Q-15, Q-23]
+      x-assumed: [Q-14, Q-15, Q-23]
       summary: Releases and their approvals, seen through release.requested and release.decided events
       description: >
-        Newest first by the `occurred_at` of the latest event received for each release (Q-15 default).
-        Promotion is not shown: there is no promotion event (Q-14 default; Q-31).
+        Newest first (Q-15 default), read as most recently updated first: ordered by the `occurred_at` of the
+        latest event received for each release, descending. This reading of the default is the architect's, not
+        part of Q-15's text. Promotion is not shown: there is no promotion event (Q-14 default; Q-31).
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
@@ -299,9 +318,12 @@ components:
       x-assumed: [Q-11, Q-23]
       description: >
         A build as the dashboard knows it from events. `status` is `running` after build.started only, else the
-        build.finished outcome. `started_at` is build.started's `occurred_at`, `finished_at` build.finished's;
-        each is null until that event arrives. `pipeline_name` comes from whichever event arrived. `steps` and
-        `failed_step` come from build.finished (empty list and null before it).
+        build.finished outcome. `started_at` is build.started's `occurred_at`, which is when the run's first step
+        started (not the runner's `created_at`, the acceptance time); `finished_at` is build.finished's
+        `occurred_at`; each is null until that event arrives. `pipeline_name` comes from whichever event arrived.
+        `steps` and `failed_step` come from build.finished ([] and null before it). The anyOf is the state table
+        the schema enforces: running means `finished_at` and `failed_step` are null and `steps` is []; passed
+        means `finished_at` is set and `failed_step` is null; failed means both are set.
       type: object
       additionalProperties: false
       required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, steps]
@@ -328,6 +350,34 @@ components:
           type: array
           items:
             $ref: "events.yml#/$defs/StepResult"
+      anyOf:
+        - properties:
+            status:
+              const: running
+            finished_at:
+              type: "null"
+            failed_step:
+              type: "null"
+            steps:
+              maxItems: 0
+        - properties:
+            status:
+              const: passed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            steps:
+              minItems: 1
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              $ref: "events.yml#/$defs/StepName"
+            steps:
+              minItems: 1
       examples:
         - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
@@ -338,11 +388,14 @@ components:
           steps: []
 
     ReleaseView:
-      x-assumed: [Q-11, Q-23]
+      x-assumed: [Q-11, Q-14, Q-23]
       description: >
         A release as the dashboard knows it from events. `status` is `pending` after release.requested only, else
         release.decided's `decision`. `requested_at` is null until release.requested arrives; `decided_by` and
-        `decided_at` are null until release.decided arrives. `artifact` comes from whichever event arrived.
+        `decided_at` are null until release.decided arrives. `artifact` comes from whichever event arrived. The
+        anyOf is the state table the schema enforces: pending means `decided_by` and `decided_at` are null;
+        approved or rejected means both are set. There is no promotion field, because there is no promotion
+        event (Q-14 default; Q-31).
       type: object
       additionalProperties: false
       required: [release_id, artifact, status, requested_at, decided_by, decided_at]
@@ -365,6 +418,21 @@ components:
           anyOf:
             - $ref: "events.yml#/$defs/Timestamp"
             - type: "null"
+      anyOf:
+        - properties:
+            status:
+              const: pending
+            decided_by:
+              type: "null"
+            decided_at:
+              type: "null"
+        - properties:
+            status:
+              $ref: "events.yml#/$defs/Decision"
+            decided_by:
+              $ref: "events.yml#/$defs/Actor"
+            decided_at:
+              $ref: "events.yml#/$defs/Timestamp"
       examples:
         - release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
           artifact:

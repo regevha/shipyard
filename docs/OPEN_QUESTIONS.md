@@ -282,13 +282,18 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   says which characters a name may have (a slash, spaces, a length limit), or whether names are case-sensitive.
 - **Status:** `open`, no default. The contracts only require a non-empty string (`events.yml#/$defs/ArtifactName`)
   and say the rule is not settled.
+- **Known gap (review of T012, issue #103):** `ArtifactName` currently accepts `/`, which cannot be the
+  `{name}` path segment (a name like `a/b` would not route to `/artifacts/{name}`). Not settled here: rejecting
+  `/`, percent-encoding it, or another rule is part of this question.
 
 ### Q-30 Who requested a release
 - **Point (found by T012):** the brief asks release-service to record who and when for the decision, not for the
   request. The Q-10 default mentions no self-approval rule, which only matters if the requester is known.
 - **Options:** (a) the request body carries a free-string `requested_by`, like `decided_by`; (b) not recorded.
-- **Status:** `open`, no default. The contracts do not record a requester (`ReleaseRequest` has only `artifact`);
-  adding one later is a contract change.
+- **Status:** `needs-decision` (issue #87). T012 default, **assumed, pending user** (placeholder set by the lead,
+  review issue #94): (b), the requester is not recorded. Marked with `x-assumed: [Q-30]` on
+  `api-release-service.yml` `ReleaseRequest` and `Release` and on `events.yml#/$defs/ReleaseRequestedData`.
+  Choosing (a) later is a contract change.
 
 ### Q-31 Promoting twice, and promotion on the dashboard
 - **Point (found by T012):** the Q-16 default returns 409 unless the release is approved and records

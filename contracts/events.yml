@@ -59,7 +59,9 @@ $defs:
   # ---------------------------------------------------------------- event types
 
   BuildStarted:
-    description: The pipeline-runner accepted a run and started its first step. Sent by pipeline-runner.
+    description: >
+      A run's first step started. Sent by pipeline-runner. `occurred_at` is that step's `started_at` (not the
+      run's `created_at`, which is when the runner accepted the run).
     allOf:
       - $ref: "#/$defs/Envelope"
       - type: object
@@ -87,7 +89,7 @@ $defs:
     x-assumed: [Q-13]
     description: >
       A run ended. One event for both outcomes, with `data.outcome` passed or failed (Q-13 default). Sent by
-      pipeline-runner.
+      pipeline-runner. `occurred_at` is the run's `finished_at` (the last run step's `finished_at`).
     allOf:
       - $ref: "#/$defs/Envelope"
       - type: object
@@ -111,6 +113,7 @@ $defs:
           build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
           outcome: passed
+          failed_step: null
           steps:
             - name: install
               status: passed
@@ -141,9 +144,13 @@ $defs:
               finished_at: "2026-11-25T11:02:05Z"
             - name: package
               status: skipped
+              started_at: null
+              finished_at: null
 
   ArtifactUploaded:
-    description: artifact-store stored a new artifact version. Sent by artifact-store.
+    description: >
+      artifact-store stored a new artifact version. Sent by artifact-store. `occurred_at` equals
+      `data.uploaded_at`.
     allOf:
       - $ref: "#/$defs/Envelope"
       - type: object
@@ -172,7 +179,9 @@ $defs:
           uploaded_at: "2026-11-25T10:04:30Z"
 
   ReleaseRequested:
-    description: release-service recorded a new release request (status pending). Sent by release-service.
+    description: >
+      release-service recorded a new release request (status pending). Sent by release-service. `occurred_at`
+      equals `data.requested_at`.
     allOf:
       - $ref: "#/$defs/Envelope"
       - type: object
@@ -203,7 +212,8 @@ $defs:
     x-assumed: [Q-13]
     description: >
       release-service recorded the approve or reject decision for a release. One event for both outcomes, with
-      `data.decision` approved or rejected (Q-13 default). Sent by release-service.
+      `data.decision` approved or rejected (Q-13 default). Sent by release-service. `occurred_at` equals
+      `data.decided_at`.
     allOf:
       - $ref: "#/$defs/Envelope"
       - type: object
@@ -261,9 +271,16 @@ $defs:
         pipeline_name: shipyard-api
 
   BuildFinishedData:
+    x-assumed: [Q-14, Q-20]
+    description: >
+      Payload of build.finished. The anyOf below is the state table the schema enforces: outcome passed means
+      `failed_step` is null and every step passed; outcome failed means `failed_step` is a step name and exactly
+      one step has status failed. Not checkable in JSON Schema, but required: `failed_step` is the `name` of that
+      failed step, the steps before it passed and the steps after it are skipped (the run stops at the first
+      failed step, Q-20 default).
     type: object
     additionalProperties: false
-    required: [build_id, pipeline_name, outcome, steps]
+    required: [build_id, pipeline_name, outcome, failed_step, steps]
     properties:
       build_id:
         $ref: "#/$defs/BuildId"
@@ -273,27 +290,46 @@ $defs:
         $ref: "#/$defs/BuildOutcome"
       steps:
         x-assumed: [Q-14]
-        description: Result of every step of the definition, in definition order (Q-14 default).
+        description: >
+          Result of every step of the definition, in definition order (Q-14 default). In a finished run a step
+          is only passed, failed or skipped.
         type: array
         minItems: 1
         items:
           $ref: "#/$defs/StepResult"
+          properties:
+            status:
+              enum: [passed, failed, skipped]
       failed_step:
         x-assumed: [Q-14, Q-20]
-        description: >
-          Name of the step that failed. Present exactly when outcome is failed; the run stops at the first failed
-          step (Q-20 default), so there is at most one.
-        $ref: "#/$defs/StepName"
-    if:
-      required: [outcome]
-      properties:
-        outcome:
-          const: failed
-    then:
-      required: [failed_step]
-    else:
-      not:
-        required: [failed_step]
+        description: Name of the step that failed; null when the outcome is passed.
+        anyOf:
+          - $ref: "#/$defs/StepName"
+          - type: "null"
+    anyOf:
+      - properties:
+          outcome:
+            const: passed
+          failed_step:
+            type: "null"
+          steps:
+            items:
+              properties:
+                status:
+                  const: passed
+      - properties:
+          outcome:
+            const: failed
+          failed_step:
+            $ref: "#/$defs/StepName"
+          steps:
+            contains:
+              required: [status]
+              properties:
+                status:
+                  const: failed
+            minContains: 1
+            maxContains: 1
     examples:
       - build_id: 9e8d7c6b-5a49-4382-a716-05f4e3d2c104
         pipeline_name: shipyard-api
@@ -310,8 +346,14 @@ $defs:
             finished_at: "2026-11-25T11:02:05Z"
           - name: package
             status: skipped
+            started_at: null
+            finished_at: null
 
   ReleaseRequestedData:
+    x-assumed: [Q-30]
+    description: >
+      Payload of release.requested. Who requested the release is not recorded (Q-30 default, needs-decision:
+      placeholder, not decided).
     type: object
     additionalProperties: false
     required: [release_id, artifact, requested_at]
@@ -421,19 +463,47 @@ $defs:
     x-assumed: [Q-14, Q-20]
     description: >
       Result of one step, used in build.finished (Q-14 default) and in pipeline-runner's run resource (Q-20
-      default). `started_at` is present once the step started; `finished_at` once it passed or failed.
+      default). Both timestamps are always present and null means not yet (or never): pending and skipped steps
+      have both null, a running step has `started_at` only, a passed or failed step has both. The anyOf
+      enforces this.
     type: object
     additionalProperties: false
-    required: [name, status]
+    required: [name, status, started_at, finished_at]
     properties:
       name:
         $ref: "#/$defs/StepName"
       status:
         $ref: "#/$defs/StepStatus"
       started_at:
-        $ref: "#/$defs/Timestamp"
+        anyOf:
+          - $ref: "#/$defs/Timestamp"
+          - type: "null"
       finished_at:
-        $ref: "#/$defs/Timestamp"
+        anyOf:
+          - $ref: "#/$defs/Timestamp"
+          - type: "null"
+    anyOf:
+      - properties:
+          status:
+            enum: [pending, skipped]
+          started_at:
+            type: "null"
+          finished_at:
+            type: "null"
+      - properties:
+          status:
+            const: running
+          started_at:
+            $ref: "#/$defs/Timestamp"
+          finished_at:
+            type: "null"
+      - properties:
+          status:
+            enum: [passed, failed]
+          started_at:
+            $ref: "#/$defs/Timestamp"
+          finished_at:
+            $ref: "#/$defs/Timestamp"
     examples:
       - name: test
         status: failed
@@ -441,6 +511,12 @@ $defs:
         finished_at: "2026-11-25T11:02:05Z"
       - name: package
         status: skipped
+        started_at: null
+        finished_at: null
+      - name: install
+        status: running
+        started_at: "2026-11-25T11:00:00Z"
+        finished_at: null
 
   ArtifactName:
     description: >
