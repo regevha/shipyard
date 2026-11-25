@@ -6,8 +6,9 @@ its sources, the options, and a status.
 **Statuses:** `open` (known, not yet blocking; a default may be proposed), `needs-decision` (the user must choose;
 becomes a `needs-decision` issue), `resolved-by-user-brief` (the user's brief settles it; the entry says where and
 what follow-up remains). An entry marked **T012 default: assumed, pending user** means T012 writes that default
-into the contracts, labelled "assumed, pending user" in the contract's `description`, until the user confirms or
-changes it.
+into the contracts, marked with `x-assumed: [Q-nn]` on the element it affects (rule in `docs/PLAN.md`
+§ "Marking assumed defaults"), until the user confirms or changes it. For `needs-decision` entries the default
+is only a labelled placeholder so the contracts can be complete; it is never presented as decided.
 
 "User brief" below means the user's Shipyard brief for wave 1 as relayed by the lead in the T010 task prompt
 (issue #9). It is not yet stored as a file in the repo (see Q-07).
@@ -90,6 +91,19 @@ changes it.
   status); `.claude/agents/architect.md` step 5b also lists owner and depends-on.
 - **Status:** `resolved-by-user-brief`: the table has the brief's columns; owner and depends-on live in each
   `docs/tasks/Tnn.yml`, linked from the table.
+
+### Q-24 Task spec format vs `docs/tasks/README.md`
+- **Conflict:** `docs/tasks/README.md` (synced from the shared core, listed in `docs/team/SYNC_FILES`) line 15
+  lists task owners as `db-engineer | backend-dev | frontend-dev | tester | e2e-tester | devops | chore`, with no
+  `architect`; line 30 says `acceptance` holds `AC-nn` IDs from `docs/PRODUCT.md`. `docs/tasks/T010.yml` and
+  `docs/tasks/T012.yml` have `owner: architect`, and T010-T012 list runnable command strings under `acceptance`,
+  because Shipyard has no `docs/PRODUCT.md` and the user brief asks for runnable acceptance commands.
+- **Options:** (a) change `README.md` in the shared core (add `architect` for spec and contract tasks; allow
+  command strings when there is no `PRODUCT.md`); (b) a local note in a Shipyard-only file (e.g.
+  `docs/team/environment.md`) that overrides those two lines; (c) a per-repo exception list read by CI, like
+  `docs/team/branch_exemptions`.
+- **Status:** `needs-decision`. CI does not check either field today (`scripts/ci/check_task_scope.py` reads only
+  `files_touched`), so nothing is blocked yet.
 
 ## Ambiguities the contracts must settle (for T012)
 

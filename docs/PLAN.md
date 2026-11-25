@@ -70,16 +70,47 @@ T011 (checker) and T012 (contracts) follow this section exactly. "MUST" rules ar
   `errors.yml` this MUST be written as the root `$id`. OpenAPI files have no `$id` at the root; the checker assigns
   them that URI.
 
+### YAML must load as JSON (all six files)
+Contracts are JSON data written in YAML. After loading, the checker walks every node and reports each violation as
+a normal failure line (`<file>: <JSON pointer>: <message>`, no traceback); it runs before any other check of that
+file, and a file with a violation gets no further checks.
+- Every mapping key MUST be a string. Quote anything YAML would read otherwise: status codes (`"200":`, not
+  `200:`), `"true"`, `"null"`, numbers.
+- Every value MUST be a JSON type: `str`, `int`, `float`, `bool`, `None`, `list` or `dict`. Timestamps and dates
+  MUST be quoted (`"2026-11-25T10:00:00Z"`, not a bare timestamp, which loads as `datetime`).
+- YAML 1.1 surprises are the author's job: quote strings such as `on`, `off`, `yes`, `no` and version-like values
+  such as `"0.1"` or `"1.10"` whenever a string is meant (the loader gives `bool`/`float` and the schema check then
+  fails, which is correct but confusing).
+- The self-test has one failing fixture per case: an unquoted integer key, an unquoted timestamp value, an unquoted
+  date value, and an unquoted `on` where the schema says `type: string`.
+
+### Marking assumed defaults
+A contract element whose shape comes from a default in `docs/OPEN_QUESTIONS.md` ("T012 default: assumed, pending
+user") MUST carry `x-assumed: [Q-nn, ...]` on the closest object it affects (a schema, a property schema, an
+OpenAPI operation, parameter or response). It is the only marker; a description line alone does not count. The
+checker fails if an `x-assumed` value is not a non-empty list of strings matching `^Q-\d{2}$`, or names an ID with
+no `### Q-nn` heading in `docs/OPEN_QUESTIONS.md` (relative to `--root`). `x-assumed` is never put inside example
+values. Assumed elements are never presented as decided, and `needs-decision` questions get only the labelled
+default.
+
 ### `errors.yml` and `events.yml` (JSON Schema 2020-12)
 - Root keys: `$schema: https://json-schema.org/draft/2020-12/schema` (MUST), `$id` (MUST, as above),
   `$defs` (MUST, non-empty mapping). The whole file MUST be a valid 2020-12 schema
   (`Draft202012Validator.check_schema`).
 - Every entry directly under `$defs` MUST have `examples:`, a non-empty list. Each list item is one example of
   that schema.
+- No cross-file `$ref`s: every `$ref` in these two files MUST start with `#`. Only `api-*.yml` files may refer to
+  other files.
 - `events.yml`: one `$defs` entry per event type (plus shared parts such as an envelope, which also carry
   `examples`). The root MUST have `oneOf`, a list of `$ref`s, one to each event type's `$defs` entry, so the root
-  schema is "any valid event" (the body of the dashboard's events endpoint). Event names and the envelope are
-  T012's content, not fixed here.
+  schema is "any valid event" (the body of the dashboard's events endpoint). "Event types" means exactly the
+  `$defs` entries that are targets of the root `oneOf` `$ref`s; any other `$defs` entry (for example the envelope)
+  is a shared part. Event names and the envelope are T012's content, not fixed here.
+- Composition: a schema built with `allOf` MUST close itself with `unevaluatedProperties: false` at the composing
+  level, and MUST NOT have `additionalProperties: false`; a schema used as an `allOf` member (inline, or as the
+  target of a `$ref` inside `allOf`) MUST NOT have `additionalProperties: false` or `unevaluatedProperties: false`
+  (it stays open, so the composer's own keyword decides). The checker fails on each breach. This rule applies to
+  the OpenAPI files' schemas too. Without it every example of a composed schema fails.
 - `errors.yml`: MUST define `$defs/ErrorEnvelope` (the only error body any service returns) and `$defs/ErrorCode`
   (a schema with `enum` of the machine-readable error codes). The root MUST have `x-status-codes`: a list of
   mappings `{status: <int 400-599>, code: <string>, meaning: <string>}`; every `code` MUST appear in
@@ -91,14 +122,17 @@ T011 (checker) and T012 (contracts) follow this section exactly. "MUST" rules ar
   MUST pass `openapi-spec-validator` (OpenAPI 3.1 validation), run with `base_uri` set to the file's own
   `file://` URL so that cross-file `$ref`s resolve to the sibling files on disk, never over the network.
 - Every entry under `components/schemas` MUST have `examples:`, a non-empty list (as above).
-- Every media type object under a `requestBody.content` or a `responses.<status>.content` that has a `schema`
-  MUST have `examples:`, a non-empty mapping of Example Objects, each with a `value`. `externalValue` is not
+- Every media type object that has a `schema`, under `paths/.../requestBody/content`,
+  `paths/.../responses/<status>/content`, `components/requestBodies/<Name>/content` or
+  `components/responses/<Name>/content`, MUST have `examples:`, a non-empty mapping of Example Objects, each with a `value`. `externalValue` is not
   allowed. Responses without `content` (for example 204) need nothing.
-- The singular `example` keyword is not allowed anywhere (neither in schemas nor in media types), so there is one
-  form only.
+- The singular `example` keyword is not allowed in Schema, Media Type, Parameter or Header objects, so there is
+  one form only. This means the keyword; a property named `example` (a key under `properties`) or the key
+  `example` inside an example value is not affected.
 - Every response whose status is `4XX`, `5XX` or a number from 400 to 599 MUST use media type
   `application/json` with `schema: {$ref: "errors.yml#/$defs/ErrorEnvelope"}` (nothing else in that schema), and
-  each numeric error status MUST appear as a `status` in `errors.yml#/x-status-codes`.
+  each numeric error status MUST appear as a `status` in `errors.yml#/x-status-codes`. Status keys are quoted
+  strings (see "YAML must load as JSON").
 - `default` responses are not allowed (list the statuses).
 
 ### References
@@ -113,19 +147,22 @@ T011 (checker) and T012 (contracts) follow this section exactly. "MUST" rules ar
 The checker loads all contract files into one `referencing.Registry`, each as a 2020-12 resource under its base
 URI. For each (schema location, example) pair it validates the example with
 `Draft202012Validator({"$ref": "<base URI>#<JSON pointer to the schema>"}, registry=registry,
-format_checker=Draft202012Validator.FORMAT_CHECKER)`, with format assertion on for at least `date-time`, `uuid`
-and `uri`. The pairs are:
+format_checker=Draft202012Validator.FORMAT_CHECKER)`. Format assertion is on: `jsonschema[format-nongpl]` is
+installed, and before any check the checker exits 2 if `date-time`, `uuid` or `uri` is missing from
+`Draft202012Validator.FORMAT_CHECKER.checkers`. The pairs are:
 
 | File | Schema location (JSON pointer) | Examples |
 | --- | --- | --- |
-| `events.yml`, `errors.yml` | `/$defs/<Name>` | each item of `/$defs/<Name>/examples` |
-| `events.yml` | the root (empty pointer; the `oneOf`) | each item of every event type's `examples` (so every event example is also a valid "any event") |
+| `events.yml`, `errors.yml` | `/$defs/<Name>` | each item of `/$defs/<Name>/examples` (the envelope's examples are checked against the envelope only) |
+| `events.yml` | the root (empty pointer; the `oneOf`) | each item of every event type's `examples` (event types only, never shared parts; so every event example is also a valid "any event") |
 | `api-*.yml` | `/components/schemas/<Name>` | each item of its `examples` |
 | `api-*.yml` | `/paths/<escaped path>/<method>/requestBody/content/<escaped media type>/schema` | each `examples.<key>.value` of that media type |
 | `api-*.yml` | `/paths/<escaped path>/<method>/responses/<status>/content/<escaped media type>/schema` | each `examples.<key>.value` of that media type |
+| `api-*.yml` | `/components/requestBodies/<Name>/content/<escaped media type>/schema` | each `examples.<key>.value` of that media type |
+| `api-*.yml` | `/components/responses/<Name>/content/<escaped media type>/schema` | each `examples.<key>.value` of that media type |
 
 (Escaping per RFC 6901: `~` as `~0`, `/` as `~1`.) A `requestBody` or response given as a `$ref` to
-`components/` is checked at its target location instead, once. Any validation error is a failure.
+`components/` is checked at its target location (the component rows above), once. Any validation error is a failure.
 
 ### Task specs
 Every `docs/tasks/*.yml` MUST parse (same loader, duplicate keys rejected), have a mapping root, and have `id`
@@ -137,14 +174,16 @@ equal to the file name without `.yml`.
   `<file>: <JSON pointer or line>: <message>`.
 - `--self-test` runs the checker against the fixtures in `scripts/ci/fixtures/contracts/`: at least one tree that
   must pass and one failing tree per MUST rule above; exit 0 only if every fixture gives the expected result.
-- Needs `pyyaml`, `jsonschema` (with its format extras) and `openapi-spec-validator`, at the exact versions pinned
-  in `.github/workflows/ci.yml`. If one is missing, exit 2 with the `pip install` line to run; never skip a check.
+- Needs `pyyaml`, `jsonschema[format-nongpl]` and `openapi-spec-validator`, at exact versions pinned in
+  `scripts/ci/requirements-contracts.txt`; `.github/workflows/ci.yml` installs from that file. If a package is
+  missing, exit 2 with `python3 -m pip install -r scripts/ci/requirements-contracts.txt`; never skip a check.
 
 ## Conventions
 - Service names, everywhere (file names, `info.title`, event `source`): `pipeline-runner`, `artifact-store`,
   `release-service`, `dashboard`.
-- Contract objects set `additionalProperties: false` unless a field is meant to be open (say why in its
-  `description`), so a misspelt field in an example fails the check.
+- Contract objects set `additionalProperties: false` (or `unevaluatedProperties: false` when composed, see
+  "Composition") unless a field is meant to be open (say why in its `description`), so a misspelt field in an
+  example fails the check.
 - Statuses in the task table: `todo`, `in-progress`, `blocked`, `in-review`, `unverified`, `done` (`done` set only
   by the lead). Task branches may only change their own `files_touched`, so status updates to this table are made
   by the lead on a housekeeping branch (`spec-T<nn>-...`).
@@ -158,7 +197,7 @@ Owner, branch, dependencies and `read_first` are in each `docs/tasks/Tnn.yml`.
 | ID | Task | Acceptance (runnable command) | Files touched | Status |
 | --- | --- | --- | --- | --- |
 | [T010](tasks/T010.yml) ([#9](https://github.com/regevha/shipyard/issues/9)) | Wave 1 plan, contract file format, task specs, open questions | `python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('docs/tasks/*.yml')]; print('ok')"` prints `ok`; the disjoint check in `docs/tasks/T010.yml` prints `disjoint` | `docs/PLAN.md`, `docs/OPEN_QUESTIONS.md`, `docs/tasks/T010.yml`, `docs/tasks/T011.yml`, `docs/tasks/T012.yml` | in-review |
-| [T011](tasks/T011.yml) ([#10](https://github.com/regevha/shipyard/issues/10)) | CI: contract and task-spec checker, aggregate `ci-ok` job | `python3 scripts/ci/check_contracts.py --self-test` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; `ci-ok` check run is `success` on the PR head and on `main` (command in `T011.yml`) | `.github/workflows/ci.yml`, `scripts/ci/check_contracts.py`, `scripts/ci/fixtures/contracts/**` | todo |
+| [T011](tasks/T011.yml) ([#10](https://github.com/regevha/shipyard/issues/10)) | CI: contract and task-spec checker, aggregate `ci-ok` job | `python3 scripts/ci/check_contracts.py --self-test` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; `ci-ok` check run is `success` on the PR head and on `main` (command in `T011.yml`) | `.github/workflows/ci.yml`, `scripts/ci/check_contracts.py`, `scripts/ci/requirements-contracts.txt`, `scripts/ci/fixtures/contracts/**` | todo |
 | [T012](tasks/T012.yml) ([#11](https://github.com/regevha/shipyard/issues/11)) | Wave 1 contracts: events, errors, four service APIs; open questions updated | `python3 scripts/ci/check_contracts.py` exits 0; the file-presence loop in `T012.yml` exits 0; reviewer APPROVE on cross-service consistency (review gate, not a command) | `contracts/events.yml`, `contracts/errors.yml`, `contracts/api-pipeline-runner.yml`, `contracts/api-artifact-store.yml`, `contracts/api-release-service.yml`, `contracts/api-dashboard.yml`, `docs/OPEN_QUESTIONS.md` | todo |
 
 ## Contract change requests

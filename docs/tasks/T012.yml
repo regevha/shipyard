@@ -28,6 +28,7 @@ acceptance:
 summary: >
   The six contract files in the format of docs/PLAN.md "Contract file format": events (build started, build
   finished passed/failed, artifact uploaded, release requested, release approved/rejected), one shared error
-  envelope with status codes, and one OpenAPI 3.1.0 file per service. Every default taken for an open question is
-  marked "assumed, pending user" in the contract description and in docs/OPEN_QUESTIONS.md; needs-decision items
-  are not decided. Puts a "who calls whom" table in the info.description of contracts/api-dashboard.yml.
+  envelope with status codes, and one OpenAPI 3.1.0 file per service. Where docs/OPEN_QUESTIONS.md gives a "T012
+  default, assumed, pending user", use only that default and mark the element with x-assumed [Q-nn] (docs/PLAN.md
+  "Marking assumed defaults"); this includes needs-decision questions, whose defaults are placeholders and are
+  never presented as decided. Questions without a default are not settled in the contracts. Puts a "who calls whom" table in the info.description of contracts/api-dashboard.yml.

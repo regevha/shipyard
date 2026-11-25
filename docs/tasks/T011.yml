@@ -15,16 +15,17 @@ read_first:
 files_touched:
   - .github/workflows/ci.yml
   - scripts/ci/check_contracts.py
+  - scripts/ci/requirements-contracts.txt
   - scripts/ci/fixtures/contracts/**
 acceptance:
   - "python3 scripts/ci/check_contracts.py --self-test  # exits 0"
   - "python3 scripts/ci/check_contracts.py  # exits 0 on the repo"
-  - "gh api \"repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs\" --jq '.check_runs[] | select(.name==\"ci-ok\") | .conclusion'  # prints success, run on the PR head"
-  - "gh api \"repos/regevha/shipyard/commits/$(git rev-parse origin/main)/check-runs\" --jq '.check_runs[] | select(.name==\"ci-ok\") | .conclusion'  # prints success, run after merge"
+  - "gh api \"repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs\" --jq '.check_runs[] | select(.name==\"ci-ok\") | .conclusion' | sort -u | grep -qx success  # exits 0, run on the PR head"
+  - "gh api \"repos/regevha/shipyard/commits/$(git rev-parse origin/main)/check-runs\" --jq '.check_runs[] | select(.name==\"ci-ok\") | .conclusion' | sort -u | grep -qx success  # exits 0, run on main after merge"
 summary: >
   New workflow .github/workflows/ci.yml, triggered on pull_request and on push to main, with a contracts job
-  (install pinned pyyaml, jsonschema with format extras and openapi-spec-validator; run --self-test, then the
-  check) and an aggregate job whose check-run name is exactly ci-ok (needs every other ci.yml job, if: always(),
+  (pip install -r scripts/ci/requirements-contracts.txt, which pins pyyaml, jsonschema[format-nongpl] and
+  openapi-spec-validator to exact versions; run --self-test, then the check) and an aggregate job whose check-run name is exactly ci-ok (needs every other ci.yml job, if: always(),
   fails unless all succeeded). Implements docs/PLAN.md "Contract file format" exactly, including the task-spec
   parse check; anything unclear there goes to the lead, not a guess. Pin third-party GitHub Actions by commit SHA
   and pip packages to exact versions; least-privilege permissions (contents: read). Do not edit
