@@ -55,7 +55,7 @@ above, and are tracked as assumptions:
 - CI tasks are part of wave 1 (the text says "Wave 1 is CONTRACTS ONLY" and, separately, "Set up CI from day one"): Q-25.
 - `api-*.yml` as OpenAPI 3.1.0 and `events.yml`/`errors.yml` as JSON Schema 2020-12, and the rest of
   `docs/PLAN.md` § "Contract file format": Q-26.
-- What waves 2 and 3 contain beyond the two sentences above that name a later wave (the event queue "is a later
-  wave"; React "can be considered in wave 3"): Q-27.
+- What waves 2 and 3 contain, beyond the only two sentences above about what a later wave contains (the event
+  queue "is a later wave"; React "can be considered in wave 3"): Q-27.
 - "Two fix rounds": the text says "go around more than twice and the contracts still disagree": Q-05.
 - "Acceptance commands": the text says "acceptance criterion that can actually be run": Q-08, Q-24.

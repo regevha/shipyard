@@ -85,7 +85,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   lead stops and reports; applied to every reviewer/architect loop, not only contracts.
 - **Options:** (a) the user's cap applies in Shipyard and is recorded as a local override; (b) change `lead.md` in
   the shared core.
-- **Status:** `needs-decision` (where to record it, and the meaning of "two"). Until then the user's instruction
+- **Status:** `needs-decision` (where to record it, and what "more than twice" counts). Until then the brief's
+  sentence, read as in the default above (a reading that goes beyond "and the contracts still disagree"),
   outranks the synced process file.
 
 ### Q-06 Required aggregate check
@@ -105,7 +106,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   T010 prompt was a restatement, not the text). Reviewers could not check the contracts against it line by line.
 - **Status:** `resolved` by T013: the brief is stored verbatim in `docs/BRIEF.md`, with its source (the user's
   first message to the lead session, 2026-11-25 20:50 Asia/Jerusalem). The quote first posted on issue #9 left
-  out the opening words and is superseded by `docs/BRIEF.md`.
+  out the opening words and the process sections, and is superseded by `docs/BRIEF.md`.
 
 ### Q-08 Task table columns
 - **Brief (verbatim):** "docs/PLAN.md with the three waves and a task table (ID, task, acceptance criterion that
@@ -115,7 +116,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   `docs/tasks/Tnn.yml`, linked from the table.
 - **Not in the brief:** that "acceptance criterion that can actually be run" means a shell command string. That is
   the lead's reading. `open`; default, **assumed, pending user**: each criterion is a command with its expected
-  result, or is labelled as a non-command gate (e.g. a review verdict).
+  result, or is labelled as a non-command gate (e.g. a review verdict). Issue #47 (deferred).
 
 ### Q-24 Task spec format vs `docs/tasks/README.md`
 - **Conflict:** `docs/tasks/README.md` (synced from the shared core, listed in `docs/team/SYNC_FILES`) line 15
@@ -149,7 +150,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Status:** `open`. Default, **assumed, pending user**: (a).
 
 ### Q-27 What waves 2 and 3 contain
-- **Brief (verbatim), the only sentences about later waves:** "A real event queue is a later wave." and "a React
+- **Brief (verbatim), the only sentences about what later waves contain:** "A real event queue is a later wave." and "a React
   app can be considered in wave 3 if the dashboard needs it." Plus "Stop at the end of wave 1. ... Do not start
   wave 2."
 - **Point:** `docs/PLAN.md` § "Waves" puts the services in wave 2 and the queue, auth, retries, persistence and
