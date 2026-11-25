@@ -1,0 +1,69 @@
+$schema: https://json-schema.org/draft-07/schema#
+$id: https://shipyard.invalid/contracts/events.yml
+$defs:
+  Envelope:
+    type: object
+    required: [id, occurred_at, source]
+    properties:
+      id:
+        type: string
+        format: uuid
+      occurred_at:
+        type: string
+        format: date-time
+      source:
+        type: string
+        enum: [pipeline-runner, artifact-store, release-service, dashboard]
+    examples:
+      - id: 3f2b8c1e-6a52-4c0e-9d57-0b1b6f6f1a11
+        occurred_at: "2026-11-25T10:00:00Z"
+        source: pipeline-runner
+  BuildStarted:
+    allOf:
+      - $ref: "#/$defs/Envelope"
+      - allOf:
+          - type: object
+            required: [type]
+            properties:
+              type:
+                const: build.started
+          - type: object
+            required: [build_id]
+            properties:
+              build_id:
+                type: string
+                x-assumed: [Q-01]
+    unevaluatedProperties: false
+    examples:
+      - id: 3f2b8c1e-6a52-4c0e-9d57-0b1b6f6f1a11
+        occurred_at: "2026-11-25T10:00:00Z"
+        source: pipeline-runner
+        type: build.started
+        build_id: "b-1"
+  ArtifactUploaded:
+    type: object
+    additionalProperties: false
+    required: [type, artifact_id, url]
+    properties:
+      type:
+        const: artifact.uploaded
+      artifact_id:
+        type: string
+      url:
+        type: string
+        format: uri
+    examples:
+      - type: artifact.uploaded
+        artifact_id: a-1
+        url: https://artifacts.example.com/a-1
+  Extra:
+    allOf:
+      - type: object
+        properties:
+          note:
+            type: string
+    examples:
+      - note: hi
+oneOf:
+  - $ref: "#/$defs/BuildStarted"
+  - $ref: "#/$defs/ArtifactUploaded"

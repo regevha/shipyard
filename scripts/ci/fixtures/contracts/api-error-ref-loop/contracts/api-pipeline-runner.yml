@@ -1,0 +1,36 @@
+openapi: 3.1.0
+info:
+  title: pipeline-runner
+  version: "0.1.0"
+paths:
+  /health:
+    get:
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              examples:
+                up:
+                  value:
+                    status: ok
+        "500":
+          $ref: "#/components/responses/A"
+components:
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+      examples:
+        - status: ok
+  responses:
+    A:
+      $ref: "#/components/responses/B"
+    B:
+      $ref: "#/components/responses/A"

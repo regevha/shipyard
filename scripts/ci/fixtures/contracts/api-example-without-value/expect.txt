@@ -1,0 +1,1 @@
+Example Object must have a value

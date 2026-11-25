@@ -1,0 +1,1 @@
+an allOf member must stay open: remove additionalProperties
