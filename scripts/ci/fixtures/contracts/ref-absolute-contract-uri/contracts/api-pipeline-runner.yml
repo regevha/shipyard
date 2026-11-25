@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: pipeline-runner
+  version: "0.1.0"
+paths:
+  /health:
+    get:
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              examples:
+                up:
+                  value:
+                    status: ok
+        "500":
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "https://shipyard.invalid/contracts/errors.yml#/$defs/ErrorEnvelope"
+              examples:
+                boom:
+                  value:
+                    error:
+                      code: internal_error
+                      message: unexpected
+
+components:
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+      examples:
+        - status: ok

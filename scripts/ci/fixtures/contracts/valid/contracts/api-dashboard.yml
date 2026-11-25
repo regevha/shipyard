@@ -51,6 +51,8 @@ components:
         - status: ok
   responses:
     Invalid:
+      $ref: "#/components/responses/InvalidBody"
+    InvalidBody:
       description: Invalid body
       content:
         application/json:

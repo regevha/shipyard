@@ -14,9 +14,10 @@ import argparse
 import datetime
 import math
 import re
+import socket
 import sys
 from pathlib import Path
-from urllib.parse import quote, unquote, urldefrag, urljoin
+from urllib.parse import quote, unquote
 
 INSTALL_HINT = "python3 -m pip install -r scripts/ci/requirements-contracts.txt"
 
@@ -24,7 +25,8 @@ try:
     import yaml
     from jsonschema import Draft202012Validator
     from openapi_spec_validator import OpenAPIV31SpecValidator
-    from openapi_spec_validator import validate as oas_validate
+    from jsonschema_path import SchemaPath
+    from jsonschema_path.handlers import UrllibHandler
     from referencing import Registry, Resource
     from referencing.jsonschema import DRAFT202012
 except ImportError as exc:  # exit 2: never skip a check
@@ -72,6 +74,10 @@ def one_line(msg) -> str:
     return text if len(text) <= 500 else text[:497] + "..."
 
 
+def refuse_fetch(uri):
+    raise ValueError(f"refusing to fetch {uri} (the checker never uses the network)")
+
+
 class Report:
     def __init__(self):
         self.lines: list[str] = []
@@ -89,6 +95,11 @@ class UniqueKeyLoader(yaml.SafeLoader):
 
     def construct_mapping(self, node, deep=False):
         if isinstance(node, yaml.MappingNode):
+            for key_node, _ in node.value:
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping", node.start_mark,
+                        "YAML merge key '<<' is not allowed; write the keys out", key_node.start_mark)
             self.flatten_mapping(node)
             seen = set()
             for key_node, _ in node.value:
@@ -162,30 +173,53 @@ def json_violations(data) -> list[tuple[str, str]]:
 
 # --- structure walking -----------------------------------------------------
 
-def iter_objects(node, parts=()):
-    """Yield (parts, dict) for every keyword-context object, skipping example and data values."""
+def collect_data_refs(node, parts, out):
+    """Record every mapping with a $ref key inside a data value (default, const, enum, examples)."""
+    if isinstance(node, dict):
+        if "$ref" in node:
+            out.append(parts)
+        for key, value in node.items():
+            collect_data_refs(value, parts + (key,), out)
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            collect_data_refs(item, parts + (i,), out)
+
+
+def iter_objects(node, parts=(), data_refs=None):
+    """Yield (parts, dict) for every keyword-context object, skipping example and data values.
+
+    If data_refs is a list, the pointers of $ref mappings found inside the skipped data values are appended.
+    """
     if isinstance(node, list):
         for i, item in enumerate(node):
-            yield from iter_objects(item, parts + (i,))
+            yield from iter_objects(item, parts + (i,), data_refs)
         return
     if not isinstance(node, dict):
         return
     yield parts, node
     for key, value in node.items():
-        if not isinstance(key, str) or key in DATA_KEYS:
+        if not isinstance(key, str):
+            continue
+        if key in DATA_KEYS:
+            if data_refs is not None:
+                collect_data_refs(value, parts + (key,), data_refs)
             continue
         if key == "examples":
             if isinstance(value, dict):  # OpenAPI Example Objects; their `value` is example data
                 for name, example in value.items():
                     if isinstance(example, dict):
                         rest = {k: v for k, v in example.items() if k != "value"}
-                        yield from iter_objects(rest, parts + (key, name))
+                        if data_refs is not None and "value" in example:
+                            collect_data_refs(example["value"], parts + (key, name, "value"), data_refs)
+                        yield from iter_objects(rest, parts + (key, name), data_refs)
+            elif data_refs is not None:
+                collect_data_refs(value, parts + (key,), data_refs)
             continue
         if key in NAME_MAPS and isinstance(value, dict):
             for name, child in value.items():
-                yield from iter_objects(child, parts + (key, name))
+                yield from iter_objects(child, parts + (key, name), data_refs)
         else:
-            yield from iter_objects(value, parts + (key,))
+            yield from iter_objects(value, parts + (key,), data_refs)
 
 
 def lookup(doc, frag: str):
@@ -206,12 +240,19 @@ def lookup(doc, frag: str):
     return True, node
 
 
+REF_RE = re.compile(r"(?P<file>[A-Za-z0-9_.-]+)?#(?P<frag>(?:/.*)?)", re.DOTALL)
+
+
 def split_ref(name: str, ref: str):
-    """Return ((target_file, fragment), None) or (None, error message)."""
-    url, frag = urldefrag(urljoin(BASE + name, ref))
-    if not url.startswith(BASE) or url[len(BASE):] not in ALLOWED:
-        return None, f"$ref {ref!r} does not point inside the contract files (outside contracts/)"
-    return (url[len(BASE):], unquote(frag)), None
+    """Return ((target_file, fragment), None) or (None, error message).
+
+    Only '#<pointer>' and '<contract file>#<pointer>' are allowed; absolute URIs and every other form are errors.
+    """
+    match = REF_RE.fullmatch(ref)
+    if not match or (match["file"] or name) not in ALLOWED:
+        return None, (f"$ref {ref!r} must be '#<pointer>' or '<contract file>#<pointer>' naming one of the "
+                      "six contract files (absolute URIs and anything outside contracts/ are not allowed)")
+    return (match["file"] or name, unquote(match["frag"])), None
 
 
 def media_objects(doc):
@@ -259,6 +300,7 @@ class Checker:
         self.rep = Report()
         self.docs: dict[str, dict] = {}  # name -> loaded document (files that passed loading)
         self.known_q: set[str] = set()
+        self.schema_broken: set[str] = set()  # files that fail check_schema; their examples are not run
 
     def rel(self, name: str) -> str:
         return f"contracts/{name}"
@@ -319,7 +361,12 @@ class Checker:
     # -- references, x-assumed, composition (all six files)
     def check_refs(self, name, doc):
         is_schema_file = name in SCHEMA_FILES
-        for parts, obj in iter_objects(doc):
+        data_refs: list = []
+        objects = list(iter_objects(doc, (), data_refs))
+        for parts in data_refs:
+            self.fail(name, parts + ("$ref",),
+                      "a $ref inside a default, const, enum or examples value is not allowed")
+        for parts, obj in objects:
             if "$ref" not in obj:
                 continue
             ref = obj["$ref"]
@@ -330,23 +377,26 @@ class Checker:
             if is_schema_file and not ref.startswith("#"):
                 self.fail(name, where, f"$ref {ref!r} must start with '#' (no cross-file refs here)")
                 continue
-            self.resolve(name, ref, where)
+            self.resolve(name, ref, where)  # reports unresolvable refs
 
     def resolve(self, name, ref, where):
-        """Return the target node of a $ref, reporting a failure when it cannot be resolved."""
+        """Return (target file, target node) of a $ref; report a failure (when where is set) if it cannot be resolved."""
         target, err = split_ref(name, ref)
         if err:
-            self.fail(name, where, err)
+            if where is not None:
+                self.fail(name, where, err)
             return None
         tfile, frag = target
         if tfile not in self.docs:
-            self.fail(name, where, f"$ref {ref!r}: {tfile} is missing or failed to load")
+            if where is not None:
+                self.fail(name, where, f"$ref {ref!r}: {tfile} is missing or failed to load")
             return None
         ok, node = lookup(self.docs[tfile], frag)
         if not ok:
-            self.fail(name, where, f"$ref {ref!r} does not resolve: no {frag or '(root)'} in {tfile}")
+            if where is not None:
+                self.fail(name, where, f"$ref {ref!r} does not resolve: no {frag or '(root)'} in {tfile}")
             return None
-        return node
+        return tfile, node
 
     def check_x_assumed(self, name, doc):
         for parts, obj in iter_objects(doc):
@@ -364,32 +414,33 @@ class Checker:
                                            "heading in docs/OPEN_QUESTIONS.md")
 
     def check_composition(self, name, doc):
-        for parts, obj in iter_objects(doc):
-            members = obj.get("allOf")
-            if not isinstance(members, list):
-                continue
+        composers = [(parts, obj) for parts, obj in iter_objects(doc) if isinstance(obj.get("allOf"), list)]
+        member_ids = set()  # id() of every dict used as an allOf member (inline or as a $ref target)
+        for parts, obj in composers:
+            for member in obj["allOf"]:
+                if isinstance(member, dict) and isinstance(member.get("$ref"), str):
+                    found = self.resolve(name, member["$ref"], None)  # unresolvable refs are reported elsewhere
+                    member = found[1] if found else None
+                if isinstance(member, dict):
+                    member_ids.add(id(member))
+        for parts, obj in composers:
             if obj.get("additionalProperties") is False:
                 self.fail(name, parts + ("additionalProperties",),
                           "a schema built with allOf must not set additionalProperties: false; "
                           "use unevaluatedProperties: false")
-            if obj.get("unevaluatedProperties") is not False:
-                self.fail(name, parts, "a schema built with allOf must set unevaluatedProperties: false")
-            for i, member in enumerate(members):
-                mparts = parts + ("allOf", i)
+            if id(obj) not in member_ids and obj.get("unevaluatedProperties") is not False:
+                self.fail(name, parts, "a schema built with allOf must set unevaluatedProperties: false "
+                                       "(only the outermost composer; one that is itself an allOf member stays open)")
+            for i, member in enumerate(obj["allOf"]):
                 if isinstance(member, dict) and isinstance(member.get("$ref"), str):
-                    target, err = split_ref(name, member["$ref"])
-                    node = None
-                    if target and target[0] in self.docs:
-                        ok, node = lookup(self.docs[target[0]], target[1])
-                        node = node if ok else None
-                    member_node = node  # unresolvable refs are reported by check_refs
-                else:
-                    member_node = member
-                if isinstance(member_node, dict):
+                    found = self.resolve(name, member["$ref"], None)
+                    member = found[1] if found else None
+                if isinstance(member, dict):
                     for key in ("additionalProperties", "unevaluatedProperties"):
-                        if member_node.get(key) is False:
-                            self.fail(name, mparts, f"an allOf member must stay open: remove {key}: false "
-                                                    "(the composing schema closes it)")
+                        if member.get(key) is False:
+                            self.fail(name, parts + ("allOf", i),
+                                      f"an allOf member must stay open: remove {key}: false "
+                                      "(the composing schema closes it)")
 
     # -- events.yml and errors.yml
     def check_schema_file(self, name, doc):
@@ -404,7 +455,8 @@ class Checker:
         try:
             Draft202012Validator.check_schema(doc)
         except Exception as exc:  # SchemaError and friends
-            self.fail(name, getattr(exc, "json_path", "(root)") or "(root)",
+            self.schema_broken.add(name)
+            self.fail(name, pointer(getattr(exc, "absolute_path", ())) or "(root)",
                       f"not a valid 2020-12 schema: {getattr(exc, 'message', exc)}")
         for key, entry in defs.items():
             examples = entry.get("examples") if isinstance(entry, dict) else None
@@ -440,9 +492,10 @@ class Checker:
                 self.fail(name, where + ("code",), f"code {code!r} is not in $defs/ErrorCode/enum")
             if not isinstance(meaning, str):
                 self.fail(name, where + ("meaning",), "meaning must be a string")
-            if (status, code) in seen:
-                self.fail(name, where, f"duplicate (status, code) pair ({status}, {code})")
-            seen.add((status, code))
+            if (isinstance(status, int) and not isinstance(status, bool) and isinstance(code, str)):
+                if (status, code) in seen:
+                    self.fail(name, where, f"duplicate (status, code) pair ({status}, {code})")
+                seen.add((status, code))
 
     def event_types(self, doc):
         """Names of the $defs entries targeted by the root oneOf (list, or None if unusable)."""
@@ -509,7 +562,8 @@ class Checker:
         codes = self.docs.get("errors.yml", {}).get("x-status-codes")
         if not isinstance(codes, list):
             return None
-        return {c.get("status") for c in codes if isinstance(c, dict)}
+        return {c["status"] for c in codes if isinstance(c, dict)
+                and isinstance(c.get("status"), int) and not isinstance(c.get("status"), bool)}
 
     def check_responses(self, name, doc):
         known = self.status_codes()
@@ -528,26 +582,41 @@ class Checker:
                     numeric = status.isdigit() and len(status) == 3
                     if not (re.fullmatch(r"[45]XX", status) or (numeric and 400 <= int(status) <= 599)):
                         continue
-                    if isinstance(resp, dict) and isinstance(resp.get("$ref"), str):
-                        resp = self.resolve(name, resp["$ref"], where + ("$ref",))
-                        if resp is None:
-                            continue
+                    seen_refs = set()
+                    here = name
+                    while isinstance(resp, dict) and isinstance(resp.get("$ref"), str):  # follow chained refs
+                        if (here, resp["$ref"]) in seen_refs:
+                            self.fail(name, where, f"response $ref loop at {resp['$ref']!r}")
+                            resp = None
+                            break
+                        seen_refs.add((here, resp["$ref"]))
+                        found = self.resolve(here, resp["$ref"], None)  # an unresolvable ref is reported once, by check_refs
+                        if found is None:
+                            resp = None
+                            break
+                        here, resp = found
+                    if resp is None:
+                        continue
                     content = resp.get("content") if isinstance(resp, dict) else None
                     media = content.get("application/json") if isinstance(content, dict) else None
                     expect = {"$ref": "errors.yml#/$defs/ErrorEnvelope"}
-                    if not isinstance(media, dict) or media.get("schema") != expect:
-                        self.fail(name, where, "error response must use application/json with "
-                                               "schema: {$ref: 'errors.yml#/$defs/ErrorEnvelope'} and nothing else")
+                    if (not isinstance(content, dict) or list(content) != ["application/json"]
+                            or not isinstance(media, dict) or media.get("schema") != expect):
+                        self.fail(name, where, "error response content must have exactly one media type, "
+                                               "application/json, with schema: "
+                                               "{$ref: 'errors.yml#/$defs/ErrorEnvelope'} and nothing else")
                     if numeric and known is not None and int(status) not in known:
                         self.fail(name, where, f"status {status} is not in errors.yml#/x-status-codes")
 
     def check_openapi_validator(self, name, doc):
-        if doc.get("openapi") != "3.1.0" or any(
-                line.startswith(self.rel(name) + ":") and "$ref" in line for line in self.rep.lines):
-            return  # a bad $ref could make the validator fetch it; never go to the network
+        if doc.get("openapi") != "3.1.0":
+            return
         file_url = (self.root / "contracts" / name).resolve().as_uri()
+        handlers = {"<all_urls>": refuse_fetch, "http": refuse_fetch, "https": refuse_fetch,
+                    "file": UrllibHandler("file")}  # only sibling files on disk are ever read
         try:
-            oas_validate(doc, base_uri=file_url, cls=OpenAPIV31SpecValidator)
+            schema_path = SchemaPath.from_dict(doc, base_uri=file_url, handlers=handlers)
+            OpenAPIV31SpecValidator(schema_path).validate()
         except Exception as exc:
             self.fail(name, "(root)", f"openapi-spec-validator: {type(exc).__name__}: {exc}")
 
@@ -559,6 +628,8 @@ class Checker:
             (BASE + n, Resource.from_contents(d, default_specification=DRAFT202012))
             for n, d in self.docs.items())
         for name, doc in self.docs.items():
+            if name in self.schema_broken:
+                continue
             for schema_parts, examples in self.example_pairs(name, doc):
                 for ex_parts, value in examples:
                     self.validate_example(registry, name, schema_parts, ex_parts, value)
@@ -641,14 +712,57 @@ def run_checks(root: Path) -> list[str]:
 # One failing tree per MUST rule; each needs a directory with this name.
 REQUIRED_CASES = (
     "int-key", "timestamp", "date", "on-bool", "bad-example", "bad-format", "broken-yaml", "duplicate-key",
-    "missing-examples", "bad-cross-file-ref", "ref-outside-contracts", "ref-network",
-    "events-cross-file-ref", "allof-additional-properties", "allof-missing-unevaluated",
-    "allof-member-closed", "unknown-q", "x-assumed-format", "task-id-mismatch", "task-unparseable",
-    "task-duplicate-key", "extra-file", "wrong-dialect", "missing-oneof", "missing-error-envelope",
-    "status-code-unknown-code", "status-code-duplicate", "api-default-response", "api-example-singular",
-    "api-error-schema", "api-status-not-in-errors", "api-media-without-examples", "api-title-mismatch",
+    "merge-key", "missing-examples", "bad-cross-file-ref", "ref-outside-contracts", "ref-network",
+    "ref-absolute-contract-uri", "ref-in-default-api", "ref-in-default-errors", "events-cross-file-ref",
+    "allof-additional-properties", "allof-missing-unevaluated", "allof-member-closed", "allof-nested-closed",
+    "unknown-q", "x-assumed-format", "task-id-mismatch", "task-unparseable", "task-duplicate-key",
+    "task-root-not-mapping", "extra-file", "wrong-dialect", "wrong-id", "defs-empty", "invalid-schema",
+    "missing-oneof", "oneof-missing-def", "missing-error-envelope", "error-code-no-enum",
+    "status-codes-missing", "status-codes-item-not-mapping", "status-code-out-of-range",
+    "status-code-code-not-string", "status-code-meaning-not-string", "status-code-unknown-code",
+    "status-code-duplicate", "status-code-unhashable-status", "status-code-unhashable-code",
+    "api-openapi-version", "api-json-schema-dialect", "api-default-response", "api-example-singular",
+    "api-error-schema", "api-error-extra-media", "api-error-ref-loop", "api-status-not-in-errors",
+    "api-media-without-examples", "api-example-without-value", "api-title-mismatch",
     "api-version-not-string", "api-invalid-openapi", "api-schema-without-examples", "api-external-value",
+    "non-finite-number", "binary-value", "recursive-alias", "root-not-mapping", "ref-not-string", "not-utf8", "ref-to-missing-file",
 )
+
+
+class NetworkBlock:
+    """Make any socket use fail and record it, so a fetch attempt cannot pass unnoticed."""
+
+    def __init__(self):
+        self.attempts: list[str] = []
+
+    def __enter__(self):
+        self.saved = (socket.socket, socket.create_connection, socket.getaddrinfo)
+
+        def blocked(*args, **kwargs):
+            self.attempts.append("network access attempted")
+            raise OSError("network access is blocked by the self-test")
+
+        socket.socket, socket.create_connection, socket.getaddrinfo = blocked, blocked, blocked
+        return self
+
+    def __exit__(self, *exc):
+        socket.socket, socket.create_connection, socket.getaddrinfo = self.saved
+
+
+def check_expectations(case: str, expect: str, got: list[str]) -> list[str]:
+    """expect.txt lines: a substring that must occur in a failure line; 'once: <text>' needs exactly one line."""
+    problems = []
+    for want in (line.strip() for line in expect.splitlines() if line.strip()):
+        if want.startswith("once:"):
+            text = want[len("once:"):].strip()
+            hits = sum(text in line for line in got)
+            if hits != 1:
+                problems.append(f"fixture '{case}': expected exactly one failure line with {text!r}, got {hits}:\n    "
+                                + "\n    ".join(got))
+        elif not any(want in line for line in got):
+            problems.append(f"fixture '{case}' failed for the wrong reason; expected {want!r}, got:\n    "
+                            + "\n    ".join(got))
+    return problems
 
 
 def self_test() -> int:
@@ -656,39 +770,40 @@ def self_test() -> int:
     if not FIXTURES.is_dir():
         print(f"self-test: fixtures folder missing: {FIXTURES}")
         return 1
-    valid = FIXTURES / "valid"
-    if not (valid / "contracts").is_dir():
-        problems.append("fixture 'valid' is missing")
-    else:
-        got = run_checks(valid)
-        if got:
-            problems.append("fixture 'valid' must pass but failed:\n    " + "\n    ".join(got))
     line_re = re.compile(r"^[^:\n]+: [^\n]+?: [^\n]+$")
-    for case in REQUIRED_CASES:
-        folder = FIXTURES / case
-        expect_file = folder / "expect.txt"
-        if not expect_file.is_file():
-            problems.append(f"fixture '{case}' is missing (needs a tree and expect.txt)")
-            continue
-        expect = expect_file.read_text(encoding="utf-8").strip()
-        got = run_checks(folder)
-        if not got:
-            problems.append(f"fixture '{case}' must fail but passed")
-        elif not all(line_re.match(line) for line in got) or any("Traceback" in line for line in got):
-            problems.append(f"fixture '{case}': malformed failure line in {got}")
-        elif not any(expect in line for line in got):
-            problems.append(f"fixture '{case}' failed for the wrong reason; expected {expect!r}, got:\n    "
-                            + "\n    ".join(got))
-    extra = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir()) if FIXTURES.is_dir() else []
-    for name in extra:
-        if name != "valid" and name not in REQUIRED_CASES:
-            problems.append(f"fixture folder '{name}' is not listed in REQUIRED_CASES")
+    with NetworkBlock() as net:
+        valid = FIXTURES / "valid"
+        if not (valid / "contracts").is_dir():
+            problems.append("fixture 'valid' is missing")
+        else:
+            got = run_checks(valid)
+            if got:
+                problems.append("fixture 'valid' must pass but failed:\n    " + "\n    ".join(got))
+        for case in REQUIRED_CASES:
+            folder = FIXTURES / case
+            expect_file = folder / "expect.txt"
+            if not expect_file.is_file():
+                problems.append(f"fixture '{case}' is missing (needs a tree and expect.txt)")
+                continue
+            got = run_checks(folder)
+            if not got:
+                problems.append(f"fixture '{case}' must fail but passed")
+            elif not all(line_re.match(line) for line in got) or any("Traceback" in line for line in got):
+                problems.append(f"fixture '{case}': malformed failure line in {got}")
+            else:
+                problems += check_expectations(case, expect_file.read_text(encoding="utf-8"), got)
+    if net.attempts:
+        problems.append(f"the checker tried to use the network {len(net.attempts)} time(s)")
+    for folder in sorted(p.name for p in FIXTURES.iterdir() if p.is_dir()):
+        if folder != "valid" and folder not in REQUIRED_CASES:
+            problems.append(f"fixture folder '{folder}' is not listed in REQUIRED_CASES")
     if problems:
         print("self-test FAILED:")
         for p in problems:
             print("  " + p)
         return 1
-    print(f"self-test ok: 'valid' passes and {len(REQUIRED_CASES)} failing fixtures fail for the expected reason")
+    print(f"self-test ok: 'valid' passes and {len(REQUIRED_CASES)} failing fixtures fail for the expected reason, "
+          "with no network use")
     return 0
 
 

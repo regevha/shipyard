@@ -21,14 +21,18 @@ $defs:
   BuildStarted:
     allOf:
       - $ref: "#/$defs/Envelope"
-      - type: object
-        required: [type, build_id]
-        properties:
-          type:
-            const: build.started
-          build_id:
-            type: string
-            x-assumed: [Q-01]
+      - allOf:
+          - type: object
+            required: [type]
+            properties:
+              type:
+                const: build.started
+          - type: object
+            required: [build_id]
+            properties:
+              build_id:
+                type: string
+                x-assumed: [Q-01]
     unevaluatedProperties: false
     examples:
       - id: not-a-uuid

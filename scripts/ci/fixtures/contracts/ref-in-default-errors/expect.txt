@@ -1,0 +1,1 @@
+contracts/errors.yml: /$defs/ErrorCode/default/$ref

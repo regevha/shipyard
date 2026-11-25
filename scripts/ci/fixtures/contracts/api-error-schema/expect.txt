@@ -1,1 +1,1 @@
-error response must use application/json
+error response content must have exactly one

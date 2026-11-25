@@ -1,0 +1,7 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://shipyard.invalid/contracts/errors.yml
+$defs: {}
+x-status-codes:
+  - {status: 404, code: not_found, meaning: The resource does not exist}
+  - {status: 422, code: validation_failed, meaning: The request body is invalid}
+  - {status: 500, code: internal_error, meaning: Unexpected server error}
