@@ -52,6 +52,14 @@ $defs:
       url:
         type: string
         format: uri
+  Extra:
+    allOf:
+      - type: object
+        properties:
+          note:
+            type: string
+    examples:
+      - note: hi
 oneOf:
   - $ref: "#/$defs/BuildStarted"
   - $ref: "#/$defs/ArtifactUploaded"

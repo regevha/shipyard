@@ -56,3 +56,11 @@ $defs:
       - type: artifact.uploaded
         artifact_id: a-1
         url: https://artifacts.example.com/a-1
+  Extra:
+    allOf:
+      - type: object
+        properties:
+          note:
+            type: string
+    examples:
+      - note: hi

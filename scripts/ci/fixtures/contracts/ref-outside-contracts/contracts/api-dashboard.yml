@@ -49,6 +49,17 @@ components:
           type: string
       examples:
         - status: ok
+    Note:
+      allOf:
+        - $ref: "events.yml#/$defs/Extra"
+        - type: object
+          properties:
+            id:
+              type: string
+      unevaluatedProperties: false
+      examples:
+        - note: hi
+          id: n-1
   responses:
     Invalid:
       $ref: "#/components/responses/InvalidBody"

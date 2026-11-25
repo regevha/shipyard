@@ -185,6 +185,20 @@ def collect_data_refs(node, parts, out):
             collect_data_refs(item, parts + (i,), out)
 
 
+def raw_ref_keys(node, parts=()):
+    """Every position of a '$ref' key at any depth, as a tuple of path parts."""
+    found = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "$ref":
+                found.append(parts + ("$ref",))
+            found += raw_ref_keys(value, parts + (key,))
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            found += raw_ref_keys(item, parts + (i,))
+    return found
+
+
 def iter_objects(node, parts=(), data_refs=None):
     """Yield (parts, dict) for every keyword-context object, skipping example and data values.
 
@@ -314,7 +328,7 @@ class Checker:
         for name, doc in self.docs.items():
             self.check_refs(name, doc)
             self.check_x_assumed(name, doc)
-            self.check_composition(name, doc)
+        self.check_composition_all()
         for name in SCHEMA_FILES:
             if name in self.docs:
                 self.check_schema_file(name, self.docs[name])
@@ -366,6 +380,12 @@ class Checker:
         for parts in data_refs:
             self.fail(name, parts + ("$ref",),
                       "a $ref inside a default, const, enum or examples value is not allowed")
+        handled = {tuple(parts) + ("$ref",) for parts in data_refs}
+        handled |= {tuple(parts) + ("$ref",) for parts, obj in objects if "$ref" in obj}
+        for parts in raw_ref_keys(doc):
+            if parts not in handled:
+                self.fail(name, parts, "a '$ref' key used as a name (for example under properties or $defs) "
+                                       "is not a reference; $ref is a reserved key here (reference-form error)")
         for parts, obj in objects:
             if "$ref" not in obj:
                 continue
@@ -413,17 +433,24 @@ class Checker:
                     self.fail(name, where, f"x-assumed names {qid}, which has no '### {qid}' "
                                            "heading in docs/OPEN_QUESTIONS.md")
 
-    def check_composition(self, name, doc):
-        composers = [(parts, obj) for parts, obj in iter_objects(doc) if isinstance(obj.get("allOf"), list)]
-        member_ids = set()  # id() of every dict used as an allOf member (inline or as a $ref target)
-        for parts, obj in composers:
+    def allof_member(self, name, member):
+        """The member dict itself (inline) or the target of its $ref (any contract file); None if unresolvable."""
+        if isinstance(member, dict) and isinstance(member.get("$ref"), str):
+            found = self.resolve(name, member["$ref"], None)  # unresolvable refs are reported elsewhere
+            member = found[1] if found else None
+        return member if isinstance(member, dict) else None
+
+    def check_composition_all(self):
+        """Membership is decided across all loaded files: a member is inline in an allOf or the target of a $ref in one."""
+        composers = [(name, parts, obj) for name, doc in self.docs.items()
+                     for parts, obj in iter_objects(doc) if isinstance(obj.get("allOf"), list)]
+        member_ids = set()
+        for name, parts, obj in composers:
             for member in obj["allOf"]:
-                if isinstance(member, dict) and isinstance(member.get("$ref"), str):
-                    found = self.resolve(name, member["$ref"], None)  # unresolvable refs are reported elsewhere
-                    member = found[1] if found else None
-                if isinstance(member, dict):
-                    member_ids.add(id(member))
-        for parts, obj in composers:
+                node = self.allof_member(name, member)
+                if node is not None:
+                    member_ids.add(id(node))
+        for name, parts, obj in composers:
             if obj.get("additionalProperties") is False:
                 self.fail(name, parts + ("additionalProperties",),
                           "a schema built with allOf must not set additionalProperties: false; "
@@ -432,15 +459,14 @@ class Checker:
                 self.fail(name, parts, "a schema built with allOf must set unevaluatedProperties: false "
                                        "(only the outermost composer; one that is itself an allOf member stays open)")
             for i, member in enumerate(obj["allOf"]):
-                if isinstance(member, dict) and isinstance(member.get("$ref"), str):
-                    found = self.resolve(name, member["$ref"], None)
-                    member = found[1] if found else None
-                if isinstance(member, dict):
-                    for key in ("additionalProperties", "unevaluatedProperties"):
-                        if member.get(key) is False:
-                            self.fail(name, parts + ("allOf", i),
-                                      f"an allOf member must stay open: remove {key}: false "
-                                      "(the composing schema closes it)")
+                node = self.allof_member(name, member)
+                if node is None:
+                    continue
+                for key in ("additionalProperties", "unevaluatedProperties"):
+                    if node.get(key) is False:
+                        self.fail(name, parts + ("allOf", i),
+                                  f"an allOf member must stay open: remove {key}: false "
+                                  "(the composing schema closes it)")
 
     # -- events.yml and errors.yml
     def check_schema_file(self, name, doc):
@@ -726,6 +752,7 @@ REQUIRED_CASES = (
     "api-media-without-examples", "api-example-without-value", "api-title-mismatch",
     "api-version-not-string", "api-invalid-openapi", "api-schema-without-examples", "api-external-value",
     "non-finite-number", "binary-value", "recursive-alias", "root-not-mapping", "ref-not-string", "not-utf8", "ref-to-missing-file",
+    "inf-number", "set-value", "ref-key-as-name", "allof-cross-file-member-closed",
 )
 
 
