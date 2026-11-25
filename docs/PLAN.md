@@ -84,8 +84,13 @@ file, and a file with a violation gets no further checks.
 - YAML 1.1 surprises are the author's job: quote strings such as `on`, `off`, `yes`, `no` and version-like values
   such as `"0.1"` or `"1.10"` whenever a string is meant (the loader gives `bool`/`float` and the schema check then
   fails, which is correct but confusing).
+- Non-finite floats (`.nan`, `.inf`, `-.inf`) and YAML-only types (`!!binary` bytes, `!!set`, timestamps and
+  dates) are not JSON values: each is an error.
+- YAML merge keys (`<<`) are rejected: the loader fails on any `<<` key with a message naming it (merge keys are
+  not supported in contracts; write the keys out).
 - The self-test has one failing fixture per case: an unquoted integer key, an unquoted timestamp value, an unquoted
-  date value, and an unquoted `on` where the schema says `type: string`.
+  date value, an unquoted `on` where the schema says `type: string`, `.nan`, `.inf`, `!!binary`, `!!set` and a
+  `<<` merge key.
 
 ### Marking assumed defaults
 A contract element whose shape comes from a default in `docs/OPEN_QUESTIONS.md` ("T012 default: assumed, pending
@@ -109,10 +114,12 @@ default.
   schema is "any valid event" (the body of the dashboard's events endpoint). "Event types" means exactly the
   `$defs` entries that are targets of the root `oneOf` `$ref`s; any other `$defs` entry (for example the envelope)
   is a shared part. Event names and the envelope are T012's content, not fixed here.
-- Composition: a schema built with `allOf` MUST close itself with `unevaluatedProperties: false` at the composing
-  level, and MUST NOT have `additionalProperties: false`; a schema used as an `allOf` member (inline, or as the
-  target of a `$ref` inside `allOf`) MUST NOT have `additionalProperties: false` or `unevaluatedProperties: false`
-  (it stays open, so the composer's own keyword decides). The checker fails on each breach. This rule applies to
+- Composition: an `allOf` member is a schema that appears inline in an `allOf` list or is the target of a `$ref`
+  in one. The outermost composer (a schema with `allOf` that is not itself an `allOf` member) MUST have
+  `unevaluatedProperties: false` and MUST NOT have `additionalProperties: false`. Every `allOf` member, including
+  one that itself has `allOf`, MUST NOT have `additionalProperties: false` or `unevaluatedProperties: false`: it
+  stays open. In 2020-12 `unevaluatedProperties` sees the properties evaluated through nested `allOf` and `$ref`,
+  so the outermost close covers every level. The checker fails on each breach. This rule applies to
   the OpenAPI files' schemas too. Without it every example of a composed schema fails.
 - `errors.yml`: MUST define `$defs/ErrorEnvelope` (the only error body any service returns) and `$defs/ErrorCode`
   (a schema with `enum` of the machine-readable error codes). The root MUST have `x-status-codes`: a list of
@@ -132,19 +139,31 @@ default.
 - The singular `example` keyword is not allowed in Schema, Media Type, Parameter or Header objects, so there is
   one form only. This means the keyword; a property named `example` (a key under `properties`) or the key
   `example` inside an example value is not affected.
-- Every response whose status is `4XX`, `5XX` or a number from 400 to 599 MUST use media type
-  `application/json` with `schema: {$ref: "errors.yml#/$defs/ErrorEnvelope"}` (nothing else in that schema), and
-  each numeric error status MUST appear as a `status` in `errors.yml#/x-status-codes`. Status keys are quoted
+- Error responses: for every response whose status is `4XX`, `5XX` or a number from 400 to 599, the checker
+  first follows the response's `$ref` (to `components/responses`, through any chain of `$ref`s; a target reached
+  twice is a loop and an error). The final Response Object's `content` MUST have exactly one key,
+  `application/json`, whose `schema` is exactly `{$ref: errors.yml#/$defs/ErrorEnvelope}` (no other keyword
+  beside the `$ref`). Each numeric error status MUST appear as a `status` in `errors.yml#/x-status-codes`. Status keys are quoted
   strings (see "YAML must load as JSON").
 - `default` responses are not allowed (list the statuses).
 
 ### References
-- Inside a file: JSON pointers from its root, e.g. `#/$defs/BuildStarted`, `#/components/schemas/Artifact`.
-- Across files: the relative form `<file>#<pointer>`, e.g. `errors.yml#/$defs/ErrorEnvelope`,
-  `events.yml#/$defs/BuildFinished`. It resolves against the base URI, so it names one of the six files.
-- Any `$ref` that does not resolve to a location inside one of the files under `contracts/` is an error. The
-  checker never fetches anything over the network. OpenAPI `$ref`s outside schemas (to `components/responses`,
-  `components/parameters`, `components/examples`) follow the same rules.
+- Only two forms are allowed. Inside a file: `#<pointer>`, e.g. `#/$defs/BuildStarted`,
+  `#/components/schemas/Artifact`. Across files: `<file>#<pointer>` where `<file>` is exactly one of the six file
+  names, e.g. `errors.yml#/$defs/ErrorEnvelope`. `<pointer>` is empty or an RFC 6901 pointer starting with `/`.
+- Every other form is an error: an absolute URI (`https:`, `file:`, `urn:` and so on), `./` or `../` paths, a
+  file without `#`, any other file name. The value MUST be a string, and the target MUST exist.
+- Scanned everywhere: the checker checks every mapping key `$ref` at any depth of every contract file, including
+  inside data keywords (`default`, `const`, `enum`, `examples`) and Example Object `value`s, because some
+  validators follow them. So example data never contains a `$ref` key. OpenAPI `$ref`s outside schemas (to
+  `components/responses`, `components/requestBodies`, `components/parameters`, `components/examples`) follow the
+  same rules.
+- Network: references are resolved only from the files on disk. jsonschema uses the preloaded
+  `referencing.Registry` with no fetching retrieve function (an unknown URI is an error);
+  `openapi-spec-validator` / `jsonschema-path` get file handlers only, no `http`/`https` handlers. The checker
+  never opens a network connection. Its self-test runs with socket creation blocked (`socket.socket` and
+  `socket.create_connection` patched to raise) and must still pass, and includes a fixture with an `https:`
+  `$ref` that must fail as a reference-form error, not a network error.
 
 ### What "every example validates against its schema" means
 The checker loads all contract files into one `referencing.Registry`, each as a 2020-12 resource under its base
@@ -203,6 +222,7 @@ Owner, branch, dependencies and `read_first` are in each `docs/tasks/Tnn.yml`.
 | [T011](tasks/T011.yml) ([#10](https://github.com/regevha/shipyard/issues/10)) | CI: contract and task-spec checker, aggregate `ci-ok` job | `python3 scripts/ci/check_contracts.py --self-test` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; `ci-ok` check run is `success` on the PR head and on `main` (command in `T011.yml`) | `.github/workflows/ci.yml`, `scripts/ci/check_contracts.py`, `scripts/ci/requirements-contracts.txt`, `scripts/ci/fixtures/contracts/**` | in-review |
 | [T012](tasks/T012.yml) ([#11](https://github.com/regevha/shipyard/issues/11)) | Wave 1 contracts: events, errors, four service APIs; open questions updated | `python3 scripts/ci/check_contracts.py` exits 0; the file-presence loop in `T012.yml` exits 0; reviewer APPROVE on cross-service consistency (review gate, not a command) | `contracts/events.yml`, `contracts/errors.yml`, `contracts/api-pipeline-runner.yml`, `contracts/api-artifact-store.yml`, `contracts/api-release-service.yml`, `contracts/api-dashboard.yml`, `docs/OPEN_QUESTIONS.md` | todo |
 | [T013](https://github.com/regevha/shipyard/issues/38) ([#38](https://github.com/regevha/shipyard/issues/38)) | Store the user's brief verbatim (`docs/BRIEF.md`); check every "brief" citation against it; label the lead's own choices as assumptions (Q-25..Q-27) | `python3 scripts/team/check_brief_quotes.py --self-test` and `python3 scripts/team/check_brief_quotes.py` exit 0: every double-quoted passage (12+ characters, outside code) in `docs/OPEN_QUESTIONS.md` and `docs/PLAN.md` is word for word in `docs/BRIEF.md`, or is a section name, is labelled as a paraphrase, or is declared with its source in the script's `OTHER_SOURCES`; every `resolved-by-user-brief` entry has a Brief (verbatim) bullet with a quote found in the brief; reviewer APPROVE (review gate, not a command) | `docs/BRIEF.md`, `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md`, `scripts/team/check_brief_quotes.py` | in-review |
+| T014 ([#73](https://github.com/regevha/shipyard/issues/73)) | Contract file format amendments from the T011 review (#53, #57, #65, #67, #71, #72): error-response media type, non-JSON YAML values and merge keys, outermost-composer rule, allowed `$ref` forms and scanning, no network | `python3 -I scripts/team/check_brief_quotes.py` exits 0; reviewer APPROVE (review gate, not a command) | `docs/PLAN.md` | in-review |
 
 ## Contract change requests
 
