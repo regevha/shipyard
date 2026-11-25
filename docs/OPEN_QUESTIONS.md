@@ -265,3 +265,46 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   from received events) or the other services directly.
 - **Status:** `open`. T012 default, **assumed, pending user**: only the dashboard's own JSON endpoints; the
   dashboard never calls the other services.
+
+### Q-28 Run or build: one name for one concept
+- **Point (found by T012):** the brief speaks of builds (build started, build finished) and the runner's job as
+  running a pipeline definition. The Q-17 and Q-18 defaults call the identifier `build_id`; the Q-20 default calls
+  the resource a run (`POST /runs`, `GET /runs/{id}`, the run ID). Two names for one concept would break the
+  cross-service consistency the reviewer checks.
+- **Options:** (a) one run is one build: the identifier is `build_id` in every file and the runner's paths stay
+  `/runs` (`GET /runs/{build_id}`); (b) rename the runner's resource to `/builds`; (c) call it `run_id`
+  everywhere and rename the events' fields.
+- **Status:** `open`. T012 default, **assumed, pending user**: (a). Marked on `events.yml#/$defs/BuildId` and on
+  the runner's `Run` schema.
+
+### Q-29 Allowed characters in an artifact name
+- **Point (found by T012):** the Q-18 default puts the artifact name in the URL path (`/artifacts/{name}`). Nothing
+  says which characters a name may have (a slash, spaces, a length limit), or whether names are case-sensitive.
+- **Status:** `open`, no default. The contracts only require a non-empty string (`events.yml#/$defs/ArtifactName`)
+  and say the rule is not settled.
+
+### Q-30 Who requested a release
+- **Point (found by T012):** the brief asks release-service to record who and when for the decision, not for the
+  request. The Q-10 default mentions no self-approval rule, which only matters if the requester is known.
+- **Options:** (a) the request body carries a free-string `requested_by`, like `decided_by`; (b) not recorded.
+- **Status:** `open`, no default. The contracts do not record a requester (`ReleaseRequest` has only `artifact`);
+  adding one later is a contract change.
+
+### Q-31 Promoting twice, and promotion on the dashboard
+- **Point (found by T012):** the Q-16 default returns 409 unless the release is approved and records
+  `promoted_at`; it does not say what a second promote of an approved, already promoted release returns (200 and
+  unchanged, 200 with a new time, or 409). Separately, the Q-14 default has no promotion event, so the dashboard
+  cannot show whether a release was promoted, although the brief's blocking of promotion is the point of
+  release-service.
+- **Status:** `open`, no default. The contracts leave the second promote unspecified (said in the operation's
+  description) and the dashboard's release view has no promotion field.
+
+### Q-32 Who calls decision and promote, and from where
+- **Point (found by T012):** the Q-16 default says any client, including the dashboard UI, may call promote; the
+  Q-23 default says the frontend fetches only the dashboard's own endpoints and the dashboard never calls the
+  other services. If people approve, reject or promote from the dashboard pages, the browser either calls
+  release-service directly (needs CORS, and the pages need release-service's address) or the dashboard forwards
+  the call (the dashboard then calls another service, against Q-23). Nothing says who calls the decision endpoint
+  at all.
+- **Status:** `open`, no default. The contracts list the caller as any client and add no dashboard write
+  endpoint; the who-calls-whom table in `contracts/api-dashboard.yml` points here.

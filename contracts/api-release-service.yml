@@ -1,0 +1,345 @@
+openapi: 3.1.0
+info:
+  title: release-service
+  version: "0.1.0"
+  x-assumed: [Q-09]
+  description: >
+    Holds a release request, records an approve or reject decision with who and when, and blocks promotion
+    until approved.
+
+
+    Calls it makes (see the table in api-dashboard.yml): it POSTs `release.requested` after a release is created
+    and `release.decided` after a decision, to the dashboard's `POST /events`. It does not call artifact-store
+    to check that the referenced artifact exists (Q-16 default). There is no promotion event (Q-14 default).
+
+
+    Rules (Q-10 and Q-16 defaults, needs-decision: placeholders, not decided): a release references one artifact
+    by name + version; the decision body carries `decided_by` (free string) and the server sets `decided_at`;
+    one decision per release, and it is final (a second decision is 409 release_already_decided); a rejected
+    release stays rejected and a new release is requested instead; there is no self-approval rule; promotion is
+    a recorded state change only (`promoted_at`) and is 409 release_not_approved unless the release is approved.
+    Who calls the decision and promote endpoints, and what a second promote of an already promoted release
+    returns, are not settled (Q-31, Q-32).
+
+
+    Authentication: none (Q-09 default, assumed, pending user), so `decided_by` is whatever the caller sends.
+    There is no security scheme.
+paths:
+  /releases:
+    post:
+      operationId: requestRelease
+      x-assumed: [Q-16]
+      summary: Request a release of one artifact version
+      description: Creates a release with status `pending` and answers 201.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseRequest"
+            examples:
+              request:
+                value:
+                  artifact:
+                    name: shipyard-api
+                    version: 3
+      responses:
+        "201":
+          description: The new release.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+              examples:
+                pending:
+                  value:
+                    release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                    artifact:
+                      name: shipyard-api
+                      version: 3
+                    status: pending
+                    requested_at: "2026-11-25T10:10:00Z"
+                    decided_by: null
+                    decided_at: null
+                    promoted_at: null
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /releases/{release_id}:
+    get:
+      operationId: getRelease
+      summary: One release
+      parameters:
+        - $ref: "#/components/parameters/ReleaseId"
+      responses:
+        "200":
+          description: The release.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+              examples:
+                approved:
+                  value:
+                    release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                    artifact:
+                      name: shipyard-api
+                      version: 3
+                    status: approved
+                    requested_at: "2026-11-25T10:10:00Z"
+                    decided_by: dana
+                    decided_at: "2026-11-25T10:20:00Z"
+                    promoted_at: null
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /releases/{release_id}/decision:
+    post:
+      operationId: decideRelease
+      x-assumed: [Q-10]
+      summary: Record the approve or reject decision
+      description: >
+        Records the decision, who made it (`decided_by`, as sent) and when (`decided_at`, set by the server), and
+        answers 200 with the updated release. Error precedence: 422 for a malformed path parameter, then 404,
+        then 422 for the body, then 409 release_already_decided.
+      parameters:
+        - $ref: "#/components/parameters/ReleaseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequest"
+            examples:
+              approve:
+                value:
+                  decision: approved
+                  decided_by: dana
+              reject:
+                value:
+                  decision: rejected
+                  decided_by: lee
+      responses:
+        "200":
+          description: The release with its decision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+              examples:
+                approved:
+                  value:
+                    release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                    artifact:
+                      name: shipyard-api
+                      version: 3
+                    status: approved
+                    requested_at: "2026-11-25T10:10:00Z"
+                    decided_by: dana
+                    decided_at: "2026-11-25T10:20:00Z"
+                    promoted_at: null
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          x-assumed: [Q-10]
+          description: The release already has a decision (release_already_decided).
+          content:
+            application/json:
+              schema:
+                $ref: "errors.yml#/$defs/ErrorEnvelope"
+              examples:
+                already-decided:
+                  value:
+                    error:
+                      code: release_already_decided
+                      message: release 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07 is already approved
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /releases/{release_id}/promote:
+    post:
+      operationId: promoteRelease
+      x-assumed: [Q-16]
+      summary: Promote an approved release
+      description: >
+        Records `promoted_at` and answers 200 with the release; no request body. 409 release_not_approved unless
+        the release status is `approved` (Q-16 default). What a second promote of a release that already has
+        `promoted_at` returns is not settled (Q-31). Error precedence: 422 for a malformed path parameter, then
+        404, then 409.
+      parameters:
+        - $ref: "#/components/parameters/ReleaseId"
+      responses:
+        "200":
+          description: The promoted release.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+              examples:
+                promoted:
+                  value:
+                    release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                    artifact:
+                      name: shipyard-api
+                      version: 3
+                    status: approved
+                    requested_at: "2026-11-25T10:10:00Z"
+                    decided_by: dana
+                    decided_at: "2026-11-25T10:20:00Z"
+                    promoted_at: "2026-11-25T10:30:00Z"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          x-assumed: [Q-16]
+          description: The release is pending or rejected (release_not_approved).
+          content:
+            application/json:
+              schema:
+                $ref: "errors.yml#/$defs/ErrorEnvelope"
+              examples:
+                not-approved:
+                  value:
+                    error:
+                      code: release_not_approved
+                      message: release 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07 is pending, not approved
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    ReleaseId:
+      name: release_id
+      in: path
+      required: true
+      description: The release's `release_id`; a value that is not a UUID is 422 validation_failed.
+      schema:
+        $ref: "events.yml#/$defs/ReleaseId"
+
+  schemas:
+    ReleaseRequest:
+      x-assumed: [Q-16]
+      description: >
+        Body of a release request: the one artifact version to release (Q-16 default). Who requests is not
+        recorded; that is not settled (Q-30).
+      type: object
+      additionalProperties: false
+      required: [artifact]
+      properties:
+        artifact:
+          $ref: "events.yml#/$defs/ArtifactRef"
+      examples:
+        - artifact:
+            name: shipyard-api
+            version: 3
+
+    DecisionRequest:
+      x-assumed: [Q-10]
+      description: Body of a decision (Q-10 default). `decided_at` is set by the server, never sent.
+      type: object
+      additionalProperties: false
+      required: [decision, decided_by]
+      properties:
+        decision:
+          $ref: "events.yml#/$defs/Decision"
+        decided_by:
+          $ref: "events.yml#/$defs/Actor"
+      examples:
+        - decision: approved
+          decided_by: dana
+
+    ReleaseStatus:
+      x-assumed: [Q-10, Q-13]
+      description: >
+        `pending` until a decision is recorded, then the decision (`approved` or `rejected`, the values of
+        events.yml Decision), which is final (Q-10 default). The dashboard uses this schema for its release view.
+      type: string
+      enum: [pending, approved, rejected]
+      examples: [pending]
+
+    Release:
+      x-assumed: [Q-10, Q-16]
+      description: >
+        One release. `decided_by` and `decided_at` are null while pending; `promoted_at` is null until promoted
+        (only possible when approved, Q-16 default).
+      type: object
+      additionalProperties: false
+      required: [release_id, artifact, status, requested_at, decided_by, decided_at, promoted_at]
+      properties:
+        release_id:
+          $ref: "events.yml#/$defs/ReleaseId"
+        artifact:
+          $ref: "events.yml#/$defs/ArtifactRef"
+        status:
+          $ref: "#/components/schemas/ReleaseStatus"
+        requested_at:
+          $ref: "events.yml#/$defs/Timestamp"
+        decided_by:
+          anyOf:
+            - $ref: "events.yml#/$defs/Actor"
+            - type: "null"
+        decided_at:
+          anyOf:
+            - $ref: "events.yml#/$defs/Timestamp"
+            - type: "null"
+        promoted_at:
+          anyOf:
+            - $ref: "events.yml#/$defs/Timestamp"
+            - type: "null"
+      examples:
+        - release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+          artifact:
+            name: shipyard-api
+            version: 3
+          status: pending
+          requested_at: "2026-11-25T10:10:00Z"
+          decided_by: null
+          decided_at: null
+          promoted_at: null
+
+  responses:
+    NotFound:
+      description: No release with this `release_id` (not_found).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            not-found:
+              value:
+                error:
+                  code: not_found
+                  message: release 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07 not found
+    ValidationFailed:
+      description: The request is invalid (validation_failed).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            invalid:
+              value:
+                error:
+                  code: validation_failed
+                  message: request validation failed
+                  details:
+                    - location: body.decision
+                      message: must be one of approved, rejected
+    InternalError:
+      description: Unexpected server error (internal_error).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            internal:
+              value:
+                error:
+                  code: internal_error
+                  message: unexpected error
