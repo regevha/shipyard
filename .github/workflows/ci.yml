@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege: the jobs only read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  contracts:
+    name: contracts and task specs are valid
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/ci/requirements-contracts.txt
+      - name: Install the checker's pinned packages
+        run: python3 -m pip install -r scripts/ci/requirements-contracts.txt
+      - name: Self-test the contract checker
+        run: python3 scripts/ci/check_contracts.py --self-test
+      - name: Check contracts and task specs
+        run: python3 scripts/ci/check_contracts.py
+
+  # The one check to require in branch protection. Add every new job of this
+  # workflow to `needs` so it cannot be skipped silently.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [contracts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fail unless every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a required job finished with '$result'"
+              exit 1
+            fi
+          done

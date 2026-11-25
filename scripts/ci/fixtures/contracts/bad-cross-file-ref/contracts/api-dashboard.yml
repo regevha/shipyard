@@ -1,0 +1,64 @@
+openapi: 3.1.0
+info:
+  title: dashboard
+  version: "0.1.0"
+paths:
+  /events:
+    post:
+      x-assumed: [Q-01]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "events.yml#/$defs/BuildStarted"
+            examples:
+              started:
+                value:
+                  id: 3f2b8c1e-6a52-4c0e-9d57-0b1b6f6f1a11
+                  occurred_at: "2026-11-25T10:00:00Z"
+                  source: pipeline-runner
+                  type: build.started
+                  build_id: "b-1"
+      responses:
+        "202":
+          description: Accepted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "errors.yml#/$defs/Nope"
+              examples:
+                missing:
+                  value:
+                    error:
+                      code: not_found
+                      message: nothing here
+        "422":
+          $ref: "#/components/responses/Invalid"
+
+components:
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+      examples:
+        - status: ok
+  responses:
+    Invalid:
+      description: Invalid body
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            bad:
+              value:
+                error:
+                  code: validation_failed
+                  message: bad body
