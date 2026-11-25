@@ -1,0 +1,4 @@
+# Branch-name prefixes that pass the scope check without a task ID (one per line, '#' comments, blank lines ignored).
+# Read from the BASE branch by scripts/ci/check_task_scope.py, so a PR cannot exempt itself.
+# Shipyard starts with an empty list (no dependabot/ exemption); add a prefix here only by a decision. Each repo has its own list; this file is
+# NOT in docs/team/SYNC_FILES and must stay out of it.

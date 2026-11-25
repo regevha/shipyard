@@ -1,0 +1,20 @@
+# Files a team-sync PR (branch `team-sync-*`) may touch. One path or folder per line.
+# A folder (trailing /) covers everything under it. Globs are not supported (rejected).
+# CI reads this list from the BASE branch: a new line counts only after it is merged. CI: scripts/ci/check_sync_scope.py.
+#
+# Deliberately NOT listed: project-specific rules that each repo keeps for itself
+# (privacy rules, stub mode, docs/team/knowledge.md, docs/team/environment.md, .claude/settings.json
+# (hooks may sit beside repo-specific permissions; CI checks each repo's copy with
+# `lead_lock.py check-settings`), app code, contracts, plans, specs). Adding a line here is a deliberate decision.
+CLAUDE.md
+docs/team/lead.md
+docs/team/lessons.md
+.claude/agents/
+.github/ISSUE_TEMPLATE/
+.github/pull_request_template.md
+docs/tasks/README.md
+scripts/ci/check_task_scope.py
+scripts/ci/check_alembic_heads.py
+scripts/team/lead_lock.py
+.github/workflows/team-checks.yml
+docs/team/SYNC_FILES
