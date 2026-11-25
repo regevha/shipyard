@@ -1,0 +1,329 @@
+openapi: 3.1.0
+info:
+  title: pipeline-runner
+  version: "0.1.0"
+  description: >
+    Runs a pipeline definition step by step and reports each step and the final result.
+
+
+    Calls it makes (see the table in api-dashboard.yml): it POSTs `build.started` and `build.finished` events to
+    the dashboard's `POST /events`, and after a passed run uploads artifacts with artifact-store's
+    `POST /artifacts/{name}` (Q-20 default). Which artifacts a run uploads is not settled: Q-20 leaves it to the
+    Q-19 decision, and that decision (simulated steps, #34) does not say.
+
+
+    Naming: a run is a build. Its ID is `build_id` in every file (events, artifact uploads, dashboard); the
+    resource path is `/runs` (Q-28 default).
+
+
+    Authentication: none in waves 1-2 (trusted local network), revisited in wave 3 (user decision, Q-09, #29).
+    There is no security scheme.
+
+
+    Steps are simulated until wave 3 (user decision, Q-19, #34): the runner never executes a step's `command`;
+    it records it as part of the definition and fakes each step's result. How a faked step comes out failed
+    is not decided (Q-33, needs-decision, #107); this contract does not fix a mechanism.
+paths:
+  /runs:
+    post:
+      operationId: startRun
+      x-assumed: [Q-20]
+      summary: Start a run of a pipeline definition
+      description: >
+        Accepts the definition, assigns a `build_id`, answers 202 at once and runs the steps in the background, in
+        order, stopping at the first failed step (Q-20 default). Running a step means faking its result; its
+        `command` is never executed (user decision, Q-19, #34; how a step fails: Q-33, open). The runner sends `build.started` when the first
+        step starts and `build.finished` when the run ends. No cancel and no re-run (Q-20 default). Two steps
+        with the same name are 422 validation_failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineDefinition"
+            examples:
+              two-steps:
+                value:
+                  name: shipyard-api
+                  steps:
+                    - name: install
+                      command: pip install -r requirements.txt
+                    - name: test
+                      command: pytest
+      responses:
+        "202":
+          description: Run accepted; poll `GET /runs/{build_id}` for progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              examples:
+                accepted:
+                  value:
+                    build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+                    pipeline_name: shipyard-api
+                    status: running
+                    created_at: "2026-11-25T10:00:00Z"
+                    finished_at: null
+                    failed_step: null
+                    steps:
+                      - name: install
+                        status: pending
+                        started_at: null
+                        finished_at: null
+                      - name: test
+                        status: pending
+                        started_at: null
+                        finished_at: null
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /runs/{build_id}:
+    get:
+      operationId: getRun
+      x-assumed: [Q-20]
+      summary: Status and per-step results of one run
+      parameters:
+        - $ref: "#/components/parameters/BuildId"
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+              examples:
+                failed:
+                  value:
+                    build_id: 9e8d7c6b-5a49-4382-a716-05f4e3d2c104
+                    pipeline_name: shipyard-api
+                    status: failed
+                    created_at: "2026-11-25T11:00:00Z"
+                    finished_at: "2026-11-25T11:02:05Z"
+                    failed_step: test
+                    steps:
+                      - name: install
+                        status: passed
+                        started_at: "2026-11-25T11:00:00Z"
+                        finished_at: "2026-11-25T11:01:10Z"
+                      - name: test
+                        status: failed
+                        started_at: "2026-11-25T11:01:10Z"
+                        finished_at: "2026-11-25T11:02:05Z"
+                      - name: package
+                        status: skipped
+                        started_at: null
+                        finished_at: null
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    BuildId:
+      name: build_id
+      in: path
+      required: true
+      description: The run's `build_id`; a value that is not a UUID is 422 validation_failed.
+      schema:
+        $ref: "events.yml#/$defs/BuildId"
+
+  schemas:
+    PipelineDefinition:
+      description: >
+        A pipeline definition; this shape is the user's decision (Q-19, #34). Step names must be
+        unique within a definition, because they identify steps in results and in `failed_step`; a definition
+        with two steps of the same name is 422 validation_failed (JSON Schema cannot express this, the runner
+        checks it).
+      type: object
+      additionalProperties: false
+      required: [name, steps]
+      properties:
+        name:
+          $ref: "events.yml#/$defs/PipelineName"
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/StepDefinition"
+      examples:
+        - name: shipyard-api
+          steps:
+            - name: install
+              command: pip install -r requirements.txt
+            - name: test
+              command: pytest
+
+    StepDefinition:
+      description: >
+        One step; this shape is the user's decision (Q-19, #34). `command` is recorded and never executed: steps
+        are simulated until wave 3 and the runner fakes the result (how a faked step fails: Q-33, open).
+      type: object
+      additionalProperties: false
+      required: [name, command]
+      properties:
+        name:
+          $ref: "events.yml#/$defs/StepName"
+        command:
+          type: string
+          minLength: 1
+      examples:
+        - name: test
+          command: pytest
+
+    RunStatus:
+      x-assumed: [Q-13, Q-20]
+      description: >
+        `running` from acceptance until the run ends, then the build outcome (events.yml BuildOutcome, referenced,
+        not copied). The dashboard uses this schema for its build view.
+      anyOf:
+        - const: running
+        - $ref: "events.yml#/$defs/BuildOutcome"
+      examples: [running, failed]
+
+    Run:
+      x-assumed: [Q-20, Q-28]
+      description: >
+        One run (= one build, Q-28 default). `created_at` is when the runner accepted the run (the 202), not when
+        its first step started (that is the first step's `started_at` and build.started's `occurred_at`).
+        `steps` lists every step of the definition in order, with the same StepResult shape as build.finished.
+        Fields not known yet are present and null. The anyOf is the state table the schema enforces: running
+        means `finished_at` and `failed_step` are null and no step is failed or skipped; passed means
+        `finished_at` is set, `failed_step` is null and every step passed; failed means both are set and exactly
+        one step failed. Not checkable in JSON Schema, but required: `failed_step` is the name of that failed
+        step, the steps before it passed and those after it are skipped (same rules as build.finished).
+      type: object
+      additionalProperties: false
+      required: [build_id, pipeline_name, status, created_at, finished_at, failed_step, steps]
+      properties:
+        build_id:
+          $ref: "events.yml#/$defs/BuildId"
+        pipeline_name:
+          $ref: "events.yml#/$defs/PipelineName"
+        status:
+          $ref: "#/components/schemas/RunStatus"
+        created_at:
+          description: When the runner accepted the run.
+          $ref: "events.yml#/$defs/Timestamp"
+        finished_at:
+          description: When the run ended (the last run step's `finished_at`); null while running.
+          anyOf:
+            - $ref: "events.yml#/$defs/Timestamp"
+            - type: "null"
+        failed_step:
+          description: Name of the step that failed; null unless status is failed.
+          anyOf:
+            - $ref: "events.yml#/$defs/StepName"
+            - type: "null"
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: "events.yml#/$defs/StepResult"
+      anyOf:
+        - properties:
+            status:
+              const: running
+            finished_at:
+              type: "null"
+            failed_step:
+              type: "null"
+            steps:
+              items:
+                properties:
+                  status:
+                    enum: [pending, running, passed]
+        - properties:
+            status:
+              const: passed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            steps:
+              $ref: "events.yml#/$defs/PassedRunSteps"
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              $ref: "events.yml#/$defs/StepName"
+            steps:
+              $ref: "events.yml#/$defs/FailedRunSteps"
+      examples:
+        - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+          pipeline_name: shipyard-api
+          status: passed
+          created_at: "2026-11-25T10:00:00Z"
+          finished_at: "2026-11-25T10:04:12Z"
+          failed_step: null
+          steps:
+            - name: install
+              status: passed
+              started_at: "2026-11-25T10:00:00Z"
+              finished_at: "2026-11-25T10:01:30Z"
+            - name: test
+              status: passed
+              started_at: "2026-11-25T10:01:30Z"
+              finished_at: "2026-11-25T10:04:12Z"
+        - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+          pipeline_name: shipyard-api
+          status: running
+          created_at: "2026-11-25T10:00:00Z"
+          finished_at: null
+          failed_step: null
+          steps:
+            - name: install
+              status: running
+              started_at: "2026-11-25T10:00:00Z"
+              finished_at: null
+            - name: test
+              status: pending
+              started_at: null
+              finished_at: null
+
+  responses:
+    NotFound:
+      description: No run with this `build_id`.
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            not-found:
+              value:
+                error:
+                  code: not_found
+                  message: run 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701 not found
+    ValidationFailed:
+      description: The request is invalid (validation_failed).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            invalid:
+              value:
+                error:
+                  code: validation_failed
+                  message: request validation failed
+                  details:
+                    - location: body.steps
+                      message: must contain at least 1 item
+    InternalError:
+      description: Unexpected server error (internal_error).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            internal:
+              value:
+                error:
+                  code: internal_error
+                  message: unexpected error

@@ -1,0 +1,107 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://shipyard.invalid/contracts/errors.yml
+title: Shipyard error envelope
+description: >
+  The one error body every Shipyard service returns for every 4xx and 5xx response, and the list of status codes
+  with their machine-readable codes (x-status-codes). FastAPI's default `{"detail": ...}` bodies and its
+  HTTPValidationError schema are replaced in wave 2 (Q-21). Request validation errors, including a body that is
+  not valid JSON, are 422 validation_failed. 405 method_not_allowed is emitted by the framework on any path when
+  the path exists but the method does not; it uses this envelope too, and no operation lists it.
+$defs:
+
+  ErrorCode:
+    x-assumed: [Q-18]
+    description: >
+      Machine-readable error code. release_already_decided comes from the user decision on Q-10 (#30, one final
+      decision per release), release_not_approved from the user decision on Q-16 (#32, promotion blocked until
+      approved), checksum_mismatch from the user decision on Q-17 (#33), payload_too_large from the Q-18
+      default (100 MiB upload limit).
+    type: string
+    enum:
+      - validation_failed
+      - not_found
+      - method_not_allowed
+      - release_already_decided
+      - release_not_approved
+      - checksum_mismatch
+      - payload_too_large
+      - internal_error
+    examples: [not_found]
+
+  ErrorDetail:
+    description: >
+      One problem found in the request, mainly for validation_failed. `location` is where it was found, written
+      as dot-separated parts starting with `body`, `path`, `query` or `header` (for example `body.steps.0.name`).
+    type: object
+    additionalProperties: false
+    required: [location, message]
+    properties:
+      location:
+        type: string
+        minLength: 1
+      message:
+        type: string
+        minLength: 1
+    examples:
+      - location: body.steps
+        message: must contain at least 1 item
+
+  ErrorEnvelope:
+    description: >
+      The only error body any service returns. `message` is for people and may change; clients branch on
+      `code` and the HTTP status only. `details` is optional.
+    type: object
+    additionalProperties: false
+    required: [error]
+    properties:
+      error:
+        type: object
+        additionalProperties: false
+        required: [code, message]
+        properties:
+          code:
+            $ref: "#/$defs/ErrorCode"
+          message:
+            type: string
+            minLength: 1
+          details:
+            type: array
+            minItems: 1
+            items:
+              $ref: "#/$defs/ErrorDetail"
+    examples:
+      - error:
+          code: not_found
+          message: release 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07 not found
+      - error:
+          code: validation_failed
+          message: request validation failed
+          details:
+            - location: body.steps
+              message: must contain at least 1 item
+
+x-status-codes:
+  - status: 404
+    code: not_found
+    meaning: "The resource in the path does not exist."
+  - status: 405
+    code: method_not_allowed
+    meaning: "The path exists but not with this HTTP method; emitted by the framework on any path, so no operation lists it."
+  - status: 409
+    code: release_already_decided
+    meaning: "The release already has a decision; decisions are final (user decision, Q-10, #30)."
+  - status: 409
+    code: release_not_approved
+    meaning: "The release is not approved, so it cannot be promoted (user decision, Q-16, #32)."
+  - status: 413
+    code: payload_too_large
+    meaning: "The upload is larger than 100 MiB (Q-18 default, assumed, pending user)."
+  - status: 422
+    code: validation_failed
+    meaning: "The request (body, path, query or header) is invalid, including a body that is not valid JSON."
+  - status: 422
+    code: checksum_mismatch
+    meaning: "The checksum the uploader sent does not match the SHA-256 the store computed (user decision, Q-17, #33)."
+  - status: 500
+    code: internal_error
+    meaning: "Unexpected server error."

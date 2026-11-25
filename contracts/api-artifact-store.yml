@@ -1,0 +1,188 @@
+openapi: 3.1.0
+info:
+  title: artifact-store
+  version: "0.1.0"
+  description: >
+    Accepts uploads from the runner, stores them with a version and a checksum, serves them back.
+
+
+    Calls it makes (see the table in api-dashboard.yml): after each stored upload it POSTs an
+    `artifact.uploaded` event to the dashboard's `POST /events`. It does not call pipeline-runner: the
+    `build_id` of an upload is recorded as sent (user decision, Q-17, #33).
+
+
+    Versions and checksums (user decision, Q-17, #33): the store assigns an integer version per artifact name,
+    starting at 1, so every upload creates a new version and a re-upload never conflicts; it computes the
+    SHA-256 of the bytes; the uploader may send the checksum it expects, and a mismatch is 422. Upload format (Q-18 default): raw bytes, name in the path,
+    `build_id` as a query parameter, at most 100 MiB. Storage backend: wave 2.
+
+
+    Authentication: none in waves 1-2 (trusted local network), revisited in wave 3 (user decision, Q-09, #29).
+    There is no security scheme.
+paths:
+  /artifacts/{name}:
+    post:
+      operationId: uploadArtifact
+      x-assumed: [Q-18]
+      summary: Upload a new version of an artifact
+      description: >
+        Stores the body as the next version of `name` and answers 201 with its metadata (the same object that
+        the `artifact.uploaded` event carries as `data`). If `X-Checksum-SHA256` is sent and differs from the
+        computed SHA-256, nothing is stored and the answer is 422 checksum_mismatch. A body over 100 MiB is 413.
+        Error precedence: 413, then 422 validation_failed (path, query, header), then 422 checksum_mismatch.
+      parameters:
+        - $ref: "#/components/parameters/ArtifactName"
+        - name: build_id
+          in: query
+          required: true
+          x-assumed: [Q-18]
+          description: >
+            The run that produced the artifact; recorded with the upload (user decision, Q-17, #33), sent as a
+            query parameter (Q-18 default).
+          schema:
+            $ref: "events.yml#/$defs/BuildId"
+        - name: X-Checksum-SHA256
+          in: header
+          required: false
+          description: >
+            Optional checksum the uploader expects, same format as the stored checksum (user decision, Q-17, #33;
+            the header name is the contract's choice).
+          schema:
+            $ref: "events.yml#/$defs/Checksum"
+      requestBody:
+        required: true
+        description: The artifact bytes.
+        content:
+          application/octet-stream: {}
+      responses:
+        "201":
+          description: Stored; the new version's metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "events.yml#/$defs/Artifact"
+              examples:
+                stored:
+                  value:
+                    name: shipyard-api
+                    version: 3
+                    checksum: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                    size_bytes: 1048576
+                    build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+                    uploaded_at: "2026-11-25T10:04:30Z"
+        "413":
+          x-assumed: [Q-18]
+          description: The body is larger than 100 MiB (payload_too_large).
+          content:
+            application/json:
+              schema:
+                $ref: "errors.yml#/$defs/ErrorEnvelope"
+              examples:
+                too-large:
+                  value:
+                    error:
+                      code: payload_too_large
+                      message: upload is larger than 104857600 bytes
+        "422":
+          description: >
+            The request is invalid (validation_failed: for example a missing or non-UUID `build_id`), or the
+            sent checksum does not match (checksum_mismatch).
+          content:
+            application/json:
+              schema:
+                $ref: "errors.yml#/$defs/ErrorEnvelope"
+              examples:
+                invalid:
+                  value:
+                    error:
+                      code: validation_failed
+                      message: request validation failed
+                      details:
+                        - location: query.build_id
+                          message: field required
+                checksum-mismatch:
+                  value:
+                    error:
+                      code: checksum_mismatch
+                      message: sent checksum does not match the uploaded bytes
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /artifacts/{name}/versions/{version}:
+    get:
+      operationId: downloadArtifact
+      x-assumed: [Q-18]
+      summary: Download one stored version
+      parameters:
+        - $ref: "#/components/parameters/ArtifactName"
+        - name: version
+          in: path
+          required: true
+          schema:
+            $ref: "events.yml#/$defs/ArtifactVersion"
+      responses:
+        "200":
+          description: The stored bytes, with their checksum in `X-Checksum-SHA256` (Q-18 default).
+          headers:
+            X-Checksum-SHA256:
+              required: true
+              schema:
+                $ref: "events.yml#/$defs/Checksum"
+          content:
+            application/octet-stream: {}
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    ArtifactName:
+      name: name
+      in: path
+      required: true
+      description: Artifact name; allowed characters are not settled (Q-29).
+      schema:
+        $ref: "events.yml#/$defs/ArtifactName"
+
+  responses:
+    NotFound:
+      description: No artifact with this name and version (not_found).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            not-found:
+              value:
+                error:
+                  code: not_found
+                  message: artifact shipyard-api version 9 not found
+    ValidationFailed:
+      description: The request is invalid (validation_failed), for example a version that is not a positive integer.
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            invalid:
+              value:
+                error:
+                  code: validation_failed
+                  message: request validation failed
+                  details:
+                    - location: path.version
+                      message: must be an integer of at least 1
+    InternalError:
+      description: Unexpected server error (internal_error).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            internal:
+              value:
+                error:
+                  code: internal_error
+                  message: unexpected error

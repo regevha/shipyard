@@ -1,0 +1,541 @@
+openapi: 3.1.0
+info:
+  title: dashboard
+  version: "0.1.0"
+  x-assumed: [Q-11, Q-23]
+  description: |
+    Receives events from the other three services and shows builds, artifacts, approvals and failures. It also
+    serves a small web frontend (plain HTML + a little JavaScript, no build step, no React); the pages are not
+    part of this contract (folder: Q-02), only the JSON endpoints they fetch.
+
+    The frontend fetches only this service's own JSON endpoints, built from the events it received; the
+    dashboard never calls the other services (Q-23 default, assumed, pending user).
+
+    Authentication: none in waves 1-2 (user decision, Q-09, #29): anyone who can reach `POST /events` can post an
+    event. There is no security scheme.
+
+    ## Who calls whom
+
+    | Caller | Callee | Endpoint | When |
+    | --- | --- | --- | --- |
+    | any client (a person or a tool) | pipeline-runner | `POST /runs` | to start a run of a pipeline definition |
+    | any client | pipeline-runner | `GET /runs/{build_id}` | to follow a run's status and steps |
+    | pipeline-runner | dashboard | `POST /events` (`build.started`) | when a run's first step starts |
+    | pipeline-runner | dashboard | `POST /events` (`build.finished`) | when a run ends, passed or failed |
+    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after a passed run, once per artifact (Q-20 default; which artifacts: not settled, see api-pipeline-runner.yml) |
+    | artifact-store | dashboard | `POST /events` (`artifact.uploaded`) | after an upload is stored |
+    | any client | artifact-store | `GET /artifacts/{name}/versions/{version}` | to download a stored version |
+    | any client | release-service | `POST /releases` | to request a release of one artifact version |
+    | release-service | dashboard | `POST /events` (`release.requested`) | after a release is created |
+    | any client (who: Q-32) | release-service | `POST /releases/{release_id}/decision` | to approve or reject |
+    | release-service | dashboard | `POST /events` (`release.decided`) | after a decision is recorded |
+    | any client (user decision, Q-16, #32; from the dashboard pages: Q-32) | release-service | `POST /releases/{release_id}/promote` | to promote an approved release (no event: user decision, Q-14, #31) |
+    | any client | release-service | `GET /releases/{release_id}` | to read one release |
+    | dashboard web pages (browser) | dashboard | `GET /builds`, `GET /artifacts`, `GET /releases` | to refresh the views |
+
+    No service calls pipeline-runner or release-service; artifact-store and release-service never call each
+    other (user decision, Q-16, #32).
+
+    ## Event delivery (Q-11 default, assumed, pending user)
+
+    `POST /events` answers 202 once the event is accepted. Senders retry on network errors and 5xx with backoff,
+    and a delivery failure never changes a build, upload or release outcome. An `event_id` already accepted is
+    ignored and still answered 202, even if its body differs from the first one: the first accepted body wins.
+    Events may arrive out of order; the dashboard orders by `occurred_at` everywhere.
+
+    ## Views built from events
+
+    In every view, a field whose event has not arrived yet is present and null, and a list whose event has not
+    arrived yet is present and empty (`[]`); no field is ever left out. The same rule (required, null = not yet)
+    holds for every response and event field that has a not-yet state, in every contract file. It does not
+    cover fields that are simply optional: `error.details` in errors.yml stays optional (#106), and optional
+    request parameters are absent when not sent.
+paths:
+  /events:
+    post:
+      operationId: receiveEvent
+      x-assumed: [Q-11]
+      summary: Receive one event from pipeline-runner, artifact-store or release-service
+      description: >
+        The body is any one event of events.yml (its root schema). A body that is not exactly one valid event,
+        including an unknown `type`, a `source` that does not match the type, or an unknown field, is 422
+        validation_failed. A repeated `event_id` is 202 and changes nothing, even when the repeated body differs
+        from the first one: the first accepted body wins and later ones are ignored (Q-11 default).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "events.yml#"
+            examples:
+              build-started:
+                value:
+                  event_id: 0b7f3a52-9c1d-4e8a-8f43-2d6c1b9e7a01
+                  type: build.started
+                  schema_version: 1
+                  occurred_at: "2026-11-25T10:00:00Z"
+                  source: pipeline-runner
+                  data:
+                    build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+                    pipeline_name: shipyard-api
+              build-finished-failed:
+                value:
+                  event_id: 8c2f4e6a-1b3d-4a5c-9e7f-0a1b2c3d4e03
+                  type: build.finished
+                  schema_version: 1
+                  occurred_at: "2026-11-25T11:02:05Z"
+                  source: pipeline-runner
+                  data:
+                    build_id: 9e8d7c6b-5a49-4382-a716-05f4e3d2c104
+                    pipeline_name: shipyard-api
+                    outcome: failed
+                    failed_step: test
+                    steps:
+                      - name: install
+                        status: passed
+                        started_at: "2026-11-25T11:00:00Z"
+                        finished_at: "2026-11-25T11:01:10Z"
+                      - name: test
+                        status: failed
+                        started_at: "2026-11-25T11:01:10Z"
+                        finished_at: "2026-11-25T11:02:05Z"
+                      - name: package
+                        status: skipped
+                        started_at: null
+                        finished_at: null
+              artifact-uploaded:
+                value:
+                  event_id: 1d2e3f40-5a6b-4c7d-8e9f-a0b1c2d3e405
+                  type: artifact.uploaded
+                  schema_version: 1
+                  occurred_at: "2026-11-25T10:04:30Z"
+                  source: artifact-store
+                  data:
+                    name: shipyard-api
+                    version: 3
+                    checksum: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                    size_bytes: 1048576
+                    build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+                    uploaded_at: "2026-11-25T10:04:30Z"
+              release-requested:
+                value:
+                  event_id: 2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a06
+                  type: release.requested
+                  schema_version: 1
+                  occurred_at: "2026-11-25T10:10:00Z"
+                  source: release-service
+                  data:
+                    release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                    artifact:
+                      name: shipyard-api
+                      version: 3
+                    requested_at: "2026-11-25T10:10:00Z"
+              release-decided:
+                value:
+                  event_id: 3f4a5b6c-7d8e-4f9a-8b1c-2d3e4f5a6b08
+                  type: release.decided
+                  schema_version: 1
+                  occurred_at: "2026-11-25T10:20:00Z"
+                  source: release-service
+                  data:
+                    release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                    artifact:
+                      name: shipyard-api
+                      version: 3
+                    decision: approved
+                    decided_by: dana
+                    decided_at: "2026-11-25T10:20:00Z"
+      responses:
+        "202":
+          description: Accepted (also for a repeated `event_id`). No body.
+        "422":
+          description: The body is not exactly one valid event (validation_failed).
+          content:
+            application/json:
+              schema:
+                $ref: "errors.yml#/$defs/ErrorEnvelope"
+              examples:
+                unknown-type:
+                  value:
+                    error:
+                      code: validation_failed
+                      message: body is not a valid event
+                      details:
+                        - location: body.type
+                          message: unknown event type build.cancelled
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /builds:
+    get:
+      operationId: listBuilds
+      x-assumed: [Q-15, Q-23]
+      summary: Builds seen through build.started and build.finished events
+      description: >
+        Newest first (Q-15 default), read as most recently updated first: ordered by the `occurred_at` of the
+        latest event received for each build, descending. This reading of the default is the architect's, not
+        part of Q-15's text. Filter `status=failed` gives the failures view.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          description: Only builds with this status.
+          schema:
+            $ref: "api-pipeline-runner.yml#/components/schemas/RunStatus"
+      responses:
+        "200":
+          description: One page of builds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildPage"
+              examples:
+                failures:
+                  value:
+                    items:
+                      - build_id: 9e8d7c6b-5a49-4382-a716-05f4e3d2c104
+                        pipeline_name: shipyard-api
+                        status: failed
+                        started_at: "2026-11-25T11:00:00Z"
+                        finished_at: "2026-11-25T11:02:05Z"
+                        failed_step: test
+                        steps:
+                          - name: install
+                            status: passed
+                            started_at: "2026-11-25T11:00:00Z"
+                            finished_at: "2026-11-25T11:01:10Z"
+                          - name: test
+                            status: failed
+                            started_at: "2026-11-25T11:01:10Z"
+                            finished_at: "2026-11-25T11:02:05Z"
+                          - name: package
+                            status: skipped
+                            started_at: null
+                            finished_at: null
+                    limit: 50
+                    offset: 0
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /artifacts:
+    get:
+      operationId: listArtifacts
+      x-assumed: [Q-15, Q-23]
+      summary: Artifact versions seen through artifact.uploaded events
+      description: >
+        Newest first (Q-15 default) by `uploaded_at`, which equals the artifact.uploaded event's `occurred_at`
+        and is the only event for an artifact version, so this is the same ordering as for builds and releases.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: One page of artifact versions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactPage"
+              examples:
+                page:
+                  value:
+                    items:
+                      - name: shipyard-api
+                        version: 3
+                        checksum: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                        size_bytes: 1048576
+                        build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+                        uploaded_at: "2026-11-25T10:04:30Z"
+                    limit: 50
+                    offset: 0
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /releases:
+    get:
+      operationId: listReleases
+      x-assumed: [Q-15, Q-23]
+      summary: Releases and their approvals, seen through release.requested and release.decided events
+      description: >
+        Newest first (Q-15 default), read as most recently updated first: ordered by the `occurred_at` of the
+        latest event received for each release, descending. This reading of the default is the architect's, not
+        part of Q-15's text. Promotion is not shown: there is no promotion event (user decision, Q-14, #31; Q-31).
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: One page of releases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleasePage"
+              examples:
+                page:
+                  value:
+                    items:
+                      - release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                        artifact:
+                          name: shipyard-api
+                          version: 3
+                        status: approved
+                        requested_at: "2026-11-25T10:10:00Z"
+                        decided_by: dana
+                        decided_at: "2026-11-25T10:20:00Z"
+                    limit: 50
+                    offset: 0
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      x-assumed: [Q-15]
+      description: Page size (Q-15 default); above 200 is 422 validation_failed.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      required: false
+      x-assumed: [Q-15]
+      description: Number of items to skip (Q-15 default).
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  schemas:
+    BuildView:
+      x-assumed: [Q-11, Q-23]
+      description: >
+        A build as the dashboard knows it from events. `status` is `running` after build.started only, else the
+        build.finished outcome. `started_at` is build.started's `occurred_at`, which is when the run's first step
+        started (not the runner's `created_at`, the acceptance time); `finished_at` is build.finished's
+        `occurred_at`; each is null until that event arrives. `pipeline_name` comes from whichever event arrived.
+        `steps` and `failed_step` come from build.finished ([] and null before it). The anyOf is the state table
+        the schema enforces: running means `finished_at` and `failed_step` are null and `steps` is []; passed
+        means `finished_at` is set, `failed_step` is null and `steps` is events.yml PassedRunSteps; failed means
+        both are set and `steps` is events.yml FailedRunSteps. PassedRunSteps and FailedRunSteps are the same
+        schemas build.finished and pipeline-runner's Run use, so all three accept the same step lists.
+      type: object
+      additionalProperties: false
+      required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, steps]
+      properties:
+        build_id:
+          $ref: "events.yml#/$defs/BuildId"
+        pipeline_name:
+          $ref: "events.yml#/$defs/PipelineName"
+        status:
+          $ref: "api-pipeline-runner.yml#/components/schemas/RunStatus"
+        started_at:
+          anyOf:
+            - $ref: "events.yml#/$defs/Timestamp"
+            - type: "null"
+        finished_at:
+          anyOf:
+            - $ref: "events.yml#/$defs/Timestamp"
+            - type: "null"
+        failed_step:
+          anyOf:
+            - $ref: "events.yml#/$defs/StepName"
+            - type: "null"
+        steps:
+          type: array
+          items:
+            $ref: "events.yml#/$defs/StepResult"
+      anyOf:
+        - properties:
+            status:
+              const: running
+            finished_at:
+              type: "null"
+            failed_step:
+              type: "null"
+            steps:
+              maxItems: 0
+        - properties:
+            status:
+              const: passed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            steps:
+              $ref: "events.yml#/$defs/PassedRunSteps"
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              $ref: "events.yml#/$defs/StepName"
+            steps:
+              $ref: "events.yml#/$defs/FailedRunSteps"
+      examples:
+        - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
+          pipeline_name: shipyard-api
+          status: running
+          started_at: "2026-11-25T10:00:00Z"
+          finished_at: null
+          failed_step: null
+          steps: []
+
+    ReleaseView:
+      x-assumed: [Q-11, Q-23]
+      description: >
+        A release as the dashboard knows it from events. `status` is `pending` after release.requested only, else
+        release.decided's `decision`. `requested_at` is null until release.requested arrives; `decided_by` and
+        `decided_at` are null until release.decided arrives. `artifact` comes from whichever event arrived. The
+        anyOf is the state table the schema enforces: pending means `decided_by` and `decided_at` are null;
+        approved or rejected means both are set. There is no promotion field, because there is no promotion
+        event (user decision, Q-14, #31; Q-31).
+      type: object
+      additionalProperties: false
+      required: [release_id, artifact, status, requested_at, decided_by, decided_at]
+      properties:
+        release_id:
+          $ref: "events.yml#/$defs/ReleaseId"
+        artifact:
+          $ref: "events.yml#/$defs/ArtifactRef"
+        status:
+          $ref: "api-release-service.yml#/components/schemas/ReleaseStatus"
+        requested_at:
+          anyOf:
+            - $ref: "events.yml#/$defs/Timestamp"
+            - type: "null"
+        decided_by:
+          anyOf:
+            - $ref: "events.yml#/$defs/Actor"
+            - type: "null"
+        decided_at:
+          anyOf:
+            - $ref: "events.yml#/$defs/Timestamp"
+            - type: "null"
+      anyOf:
+        - properties:
+            status:
+              const: pending
+            decided_by:
+              type: "null"
+            decided_at:
+              type: "null"
+        - properties:
+            status:
+              $ref: "events.yml#/$defs/Decision"
+            decided_by:
+              $ref: "events.yml#/$defs/Actor"
+            decided_at:
+              $ref: "events.yml#/$defs/Timestamp"
+      examples:
+        - release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+          artifact:
+            name: shipyard-api
+            version: 3
+          status: pending
+          requested_at: "2026-11-25T10:10:00Z"
+          decided_by: null
+          decided_at: null
+
+    BuildPage:
+      type: object
+      additionalProperties: false
+      required: [items, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuildView"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        offset:
+          type: integer
+          minimum: 0
+      examples:
+        - items: []
+          limit: 50
+          offset: 0
+
+    ArtifactPage:
+      description: Items are the artifact.uploaded `data` objects (events.yml Artifact).
+      type: object
+      additionalProperties: false
+      required: [items, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "events.yml#/$defs/Artifact"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        offset:
+          type: integer
+          minimum: 0
+      examples:
+        - items: []
+          limit: 50
+          offset: 0
+
+    ReleasePage:
+      type: object
+      additionalProperties: false
+      required: [items, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseView"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        offset:
+          type: integer
+          minimum: 0
+      examples:
+        - items: []
+          limit: 50
+          offset: 0
+
+  responses:
+    ValidationFailed:
+      description: The request is invalid (validation_failed), for example `limit` above 200.
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            invalid:
+              value:
+                error:
+                  code: validation_failed
+                  message: request validation failed
+                  details:
+                    - location: query.limit
+                      message: must be at most 200
+    InternalError:
+      description: Unexpected server error (internal_error).
+      content:
+        application/json:
+          schema:
+            $ref: "errors.yml#/$defs/ErrorEnvelope"
+          examples:
+            internal:
+              value:
+                error:
+                  code: internal_error
+                  message: unexpected error
