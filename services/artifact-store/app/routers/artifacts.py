@@ -2,12 +2,12 @@
 
 import hashlib
 import tempfile
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from typing import IO, Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Path, Query, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response, StreamingResponse
 
 from app.core.config import MAX_UPLOAD_BYTES
 from app.core.events import EventSender
@@ -62,6 +62,15 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBody]:
         yield UploadBody(file=spool, size=size, sha256=digest.hexdigest())
     finally:
         spool.close()
+
+
+MAX_VERSION = 2**63 - 1  # larger versions cannot exist (and do not fit a database integer)
+
+
+def _chunks(handle: IO[bytes]) -> Iterator[bytes]:
+    with handle:
+        while chunk := handle.read(1024 * 1024):
+            yield chunk
 
 
 def _repo(request: Request) -> ArtifactRepo:
@@ -137,14 +146,19 @@ def download_artifact(
     version: Annotated[int, Path(ge=1)],
     repo: Annotated[ArtifactRepo, Depends(_repo)],
 ) -> Response:
-    found = repo.find(name, version)
+    found = repo.find(name, version) if version <= MAX_VERSION else None
     if found is None:
         raise ApiError(404, "not_found", f"artifact {name} version {version} not found")
     artifact, path = found
     if not path.is_file():
         raise RuntimeError("blob file is missing")  # answered as 500 internal_error
-    return FileResponse(
-        path,
+    # A plain streamed 200: no Range handling (the contract has no 206), whole file every time.
+    handle = path.open("rb")
+    return StreamingResponse(
+        _chunks(handle),
         media_type="application/octet-stream",
-        headers={"X-Checksum-SHA256": artifact.checksum},
+        headers={
+            "X-Checksum-SHA256": artifact.checksum,
+            "Content-Length": str(artifact.size_bytes),
+        },
     )

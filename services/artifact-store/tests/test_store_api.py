@@ -178,9 +178,25 @@ def test_download_returns_bytes_and_checksum_header(client: TestClient) -> None:
     assert r.headers["x-checksum-sha256"] == sha(data)
 
 
+def test_download_ignores_range_header(client: TestClient) -> None:
+    upload(client, data=b"hello")
+    r = client.get("/artifacts/app/versions/1", headers={"Range": "bytes=0-1"})
+    assert r.status_code == 200
+    assert r.content == b"hello"
+    assert r.headers["x-checksum-sha256"] == sha(b"hello")
+    assert r.headers["content-length"] == "5"
+    assert "accept-ranges" not in r.headers
+
+
 def test_download_unknown_is_404(client: TestClient) -> None:
     upload(client)
-    for path in ["/artifacts/app/versions/2", "/artifacts/nope/versions/1"]:
+    for path in [
+        "/artifacts/app/versions/2",
+        "/artifacts/nope/versions/1",
+        "/artifacts/app/versions/9223372036854775807",
+        "/artifacts/app/versions/9223372036854775808",
+        "/artifacts/app/versions/99999999999999999999999",
+    ]:
         r = client.get(path)
         assert r.status_code == 404
         assert r.json()["error"]["code"] == "not_found"
