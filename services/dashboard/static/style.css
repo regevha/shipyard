@@ -1,0 +1,52 @@
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto;
+  padding: 1rem;
+  max-width: 80rem;
+  font: 1rem/1.5 system-ui, sans-serif;
+  background: Canvas;
+  color: CanvasText;
+}
+h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+h2 { margin: 2rem 0 .5rem; font-size: 1.25rem; }
+.note { margin: 0 0 .5rem; color: GrayText; }
+nav ul { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin: 0; padding: 0; list-style: none; }
+a:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+.state { margin: .25rem 0; }
+.state.error { color: #b00020; font-weight: bold; }
+.state[hidden], .table-wrap[hidden] { display: none; }
+.table-wrap { overflow-x: auto; border: 1px solid GrayText; }
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  padding: .4rem .6rem;
+  border-bottom: 1px solid GrayText;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+th { white-space: nowrap; }
+td.mono { font-family: ui-monospace, monospace; font-size: .875rem; }
+td.time { white-space: nowrap; }
+td.num { text-align: right; }
+.status { font-weight: bold; white-space: nowrap; }
+.status-passed, .status-approved { color: #0b6b2a; }
+.status-failed, .status-rejected { color: #b00020; }
+.status-running, .status-pending { color: #8a5a00; }
+@media (prefers-color-scheme: dark) {
+  .state.error, .status-failed, .status-rejected { color: #ff8a80; }
+  .status-passed, .status-approved { color: #7ddc9a; }
+  .status-running, .status-pending { color: #ffd27a; }
+}
+.steps { margin: 0; padding-left: 1.1rem; }
+.dash { color: GrayText; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+@media (max-width: 40rem) {
+  body { padding: .5rem; }
+  th, td { padding: .3rem .4rem; font-size: .9rem; }
+  table { min-width: 48rem; }
+}
+.table-wrap:focus-visible { outline: 3px solid Highlight; }

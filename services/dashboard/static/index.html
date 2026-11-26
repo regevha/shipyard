@@ -2,10 +2,111 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Shipyard dashboard</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/style.css">
   </head>
   <body>
-    <h1>Shipyard dashboard</h1>
-    <p>The user interface comes in T027.</p>
+    <header>
+      <h1>Shipyard dashboard</h1>
+      <p id="refresh-note" class="note">Refreshes every 5 seconds. <span id="last-updated">Loading...</span></p>
+      <nav aria-label="Sections">
+        <ul>
+          <li><a href="#builds-heading">Builds</a></li>
+          <li><a href="#failures-heading">Failures</a></li>
+          <li><a href="#artifacts-heading">Artifacts</a></li>
+          <li><a href="#releases-heading">Releases</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main>
+      <section aria-labelledby="builds-heading">
+        <h2 id="builds-heading">Builds</h2>
+        <p class="state" id="builds-state" role="status">Loading...</p>
+        <div class="table-wrap" id="builds-wrap" tabindex="0" role="region" aria-label="Builds table, scrolls sideways on narrow screens" hidden>
+          <table>
+            <caption class="visually-hidden">Builds, newest first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Pipeline</th>
+                <th scope="col">Build ID</th>
+                <th scope="col">Status</th>
+                <th scope="col">Started</th>
+                <th scope="col">Finished</th>
+                <th scope="col">Steps</th>
+                <th scope="col">Failure</th>
+              </tr>
+            </thead>
+            <tbody id="builds-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="failures-heading">
+        <h2 id="failures-heading">Failures</h2>
+        <p class="state" id="failures-state" role="status">Loading...</p>
+        <div class="table-wrap" id="failures-wrap" tabindex="0" role="region" aria-label="Failures table, scrolls sideways on narrow screens" hidden>
+          <table>
+            <caption class="visually-hidden">Failed builds, newest first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Pipeline</th>
+                <th scope="col">Build ID</th>
+                <th scope="col">Status</th>
+                <th scope="col">Started</th>
+                <th scope="col">Finished</th>
+                <th scope="col">Steps</th>
+                <th scope="col">Failure</th>
+              </tr>
+            </thead>
+            <tbody id="failures-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="artifacts-heading">
+        <h2 id="artifacts-heading">Artifacts</h2>
+        <p class="state" id="artifacts-state" role="status">Loading...</p>
+        <div class="table-wrap" id="artifacts-wrap" tabindex="0" role="region" aria-label="Artifacts table, scrolls sideways on narrow screens" hidden>
+          <table>
+            <caption class="visually-hidden">Artifacts, newest first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Version</th>
+                <th scope="col">Checksum</th>
+                <th scope="col">Size</th>
+                <th scope="col">Build ID</th>
+                <th scope="col">Uploaded</th>
+              </tr>
+            </thead>
+            <tbody id="artifacts-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="releases-heading">
+        <h2 id="releases-heading">Releases</h2>
+        <p class="state" id="releases-state" role="status">Loading...</p>
+        <div class="table-wrap" id="releases-wrap" tabindex="0" role="region" aria-label="Releases table, scrolls sideways on narrow screens" hidden>
+          <table>
+            <caption class="visually-hidden">Releases, most recently updated first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Artifact</th>
+                <th scope="col">Status</th>
+                <th scope="col">Requested by</th>
+                <th scope="col">Requested</th>
+                <th scope="col">Decided by</th>
+                <th scope="col">Decided</th>
+              </tr>
+            </thead>
+            <tbody id="releases-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
   </body>
 </html>
