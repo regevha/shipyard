@@ -27,6 +27,8 @@ acceptance:
   - |-
     test -s services/dashboard/static/index.html && test -s services/dashboard/static/app.js && test -s services/dashboard/static/style.css  # exits 0
   - |-
+    grep -qF '/static/app.js' services/dashboard/static/index.html && grep -qF '/static/style.css' services/dashboard/static/index.html  # exits 0: assets referenced under /static/ (T023 serves only index.html at /)
+  - |-
     ! grep -rnE 'https?://|//cdn|import .* from' services/dashboard/static/  # exits 0: no external host, no CDN, no module build (Q-02, Q-23)
   - |-
     ! grep -rnoE "fetch\(['\"\`][^'\"\`]*" services/dashboard/static/app.js | grep -vE "fetch\(['\"\`]/(builds|artifacts|releases)"  # exits 0: fetches only the dashboard's own read endpoints (Q-23)
@@ -45,7 +47,7 @@ acceptance:
 summary: >
   Wave 2c, runs in parallel with T026. Replaces the T021 placeholder in services/dashboard/static/ with
   index.html, app.js and style.css: plain HTML and a little JavaScript, no build step, no framework, no
-  external host or CDN (Q-02, brief). Served by the dashboard at / (T023's StaticFiles mount; never edit
+  external host or CDN (Q-02, brief). Served by the dashboard: index.html at /, the other files under /static/ (T023's route and mount; never edit
   services/dashboard/app/ or tests/). The page fetches only the dashboard's own JSON: GET /builds, GET
   /builds?status=failed (failures view), GET /artifacts, GET /releases (Q-23), and refreshes every 5 seconds
   without a page reload. Shows builds (pipeline name, build_id, status, started and finished times, steps,

@@ -42,6 +42,10 @@ acceptance:
   - |-
     cd stack-tests && uv sync --locked && grep -qx '3.12' .python-version  # exits 0
   - |-
+    for d in services/pipeline-runner services/artifact-store services/release-service services/dashboard stack-tests; do for p in types-pyyaml types-jsonschema; do grep -qx "name = \"$p\"" $d/uv.lock || { echo "missing $p in $d/uv.lock"; exit 1; }; done; done  # exits 0: the stubs mypy --strict needs are locked everywhere
+  - |-
+    cd services/dashboard && printf 'import jsonschema\nimport yaml\n\nV = jsonschema.Draft202012Validator\nY = yaml.safe_load\n' > app/_stub_probe.py && uv run mypy app/_stub_probe.py; rc=$?; rm -f app/_stub_probe.py; test $rc -eq 0  # exits 0: strict mypy accepts imports of jsonschema and yaml (probe file removed)
+  - |-
     for p in .venv/ __pycache__/ .pytest_cache/ .mypy_cache/ .ruff_cache/ '*.db' '*.sqlite' '*.pyc'; do grep -qxF "$p" .gitignore || { echo "missing: $p"; exit 1; }; done  # exits 0 (#8)
   - |-
     export SHIPYARD_SLOT=97; scripts/dev/start-stack.sh && for p in 18970 18971 18972 18973; do curl -fsS http://127.0.0.1:$p/openapi.json >/dev/null || exit 1; done && scripts/dev/stop-stack.sh && sleep 1 && ! curl -s http://127.0.0.1:18970/openapi.json  # exits 0: slot 97 = ports 18970-18973, stopped cleanly
@@ -71,7 +75,9 @@ summary: >
   .mypy_cache/, .ruff_cache/, *.db, *.sqlite (closes #8). (2) For each of pipeline-runner, artifact-store,
   release-service, dashboard: services/<s>/pyproject.toml with exactly the tables of the pyproject.toml row
   (name shipyard-<s>, [tool.uv] package = false, dependencies fastapi, uvicorn, sqlalchemy, httpx; dev group
-  pytest, pytest-cov, ruff, mypy, pyyaml, jsonschema, types-PyYAML if mypy needs it; [tool.pytest.ini_options]
+  pytest, pytest-cov, ruff, mypy, pyyaml, jsonschema, types-PyYAML, types-jsonschema (always: pyyaml and jsonschema
+  ship no py.typed, so mypy --strict on the T022 copies fails without the stubs, and T022 may not edit the
+  lockfiles); [tool.pytest.ini_options]
   testpaths = ["tests"] and pythonpath = ["."]; [tool.coverage.report] fail_under: propose 85 in all four and say
   so in the hand-off, the lead confirms), uv.lock (uv 0.13.10), .python-version = 3.12. To keep CI green before
   service logic exists: app/__init__.py, a minimal app/main.py (app = FastAPI(title="<s>", version="0.1.0"), no
@@ -81,7 +87,7 @@ summary: >
   pyproject.toml and uv.lock of a service belong to that service's backend task (T023-T026); static/ belongs to
   T027 (frontend-dev). Do not create tests/__init__.py (pytest's default import mode needs the test directory on
   sys.path for the copied helper module of T022). (3) stack-tests/pyproject.toml (name shipyard-stack-tests,
-  package = false, dependencies httpx, pytest, pyyaml, jsonschema; dev ruff, mypy; [tool.mypy] files =
+  package = false, dependencies httpx, pytest, pyyaml, jsonschema; dev ruff, mypy, types-PyYAML, types-jsonschema; [tool.mypy] files =
   ["tests"], strict), uv.lock, .python-version; no tests yet (T028 adds them and the CI stack job). (4)
   scripts/dev/ports.sh, start-service.sh, start-stack.sh, stop-stack.sh exactly as the Start command, Script names
   and SQLite file rows say, bash with set -euo pipefail: ports 18000 + 10 x slot + index; servers on 127.0.0.1;
@@ -106,5 +112,6 @@ summary: >
   --cov-report=term-missing; uv export --locked into a requirements file and uvx pip-audit==2.10.1 on it); job
   `shared-copy` running python3 scripts/ci/check_shared_copy.py --self-test and then without flags; both in
   ci-ok's needs. Permissions stay contents: read. No service logic, no shared/ module, no change to contracts/.
-  Hand-off docs/tasks/T021.md: the setup-uv SHA and tag, the proposed fail_under, the exact pip-audit command,
+  Hand-off docs/tasks/T021.md: the setup-uv SHA and tag, the proposed fail_under, the dev group as locked
+  (including the types-PyYAML and types-jsonschema versions), the exact pip-audit command,
   and anything T022-T028 must know about the scripts.

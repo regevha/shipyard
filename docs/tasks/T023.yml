@@ -42,7 +42,7 @@ acceptance:
   - |-
     cd services/dashboard && uv run pytest -q tests/test_dashboard_read_api.py::test_build_running_after_started_only tests/test_dashboard_read_api.py::test_build_finished_before_started_still_one_build tests/test_dashboard_read_api.py::test_build_failed_by_upload_shows_failure_reason tests/test_dashboard_read_api.py::test_builds_newest_first_by_latest_event tests/test_dashboard_read_api.py::test_builds_status_failed_filter tests/test_dashboard_read_api.py::test_artifacts_newest_first_by_uploaded_at tests/test_dashboard_read_api.py::test_artifact_of_failed_build_is_listed tests/test_dashboard_read_api.py::test_release_pending_shows_requested_by tests/test_dashboard_read_api.py::test_release_decided_before_requested_has_null_requested_by tests/test_dashboard_read_api.py::test_release_view_has_no_promotion_field tests/test_dashboard_read_api.py::test_limit_above_200_is_422 tests/test_dashboard_read_api.py::test_limit_and_offset_page tests/test_dashboard_read_api.py::test_every_response_validates_against_contract_schema  # exits 0
   - |-
-    cd services/dashboard && uv run pytest -q tests/test_dashboard_static.py::test_index_served_at_root tests/test_dashboard_static.py::test_api_routes_win_over_static tests/test_dashboard_static.py::test_unknown_static_path_is_404_envelope tests/test_dashboard_static.py::test_only_write_endpoint_is_post_events  # exits 0 (Q-32: read-only)
+    cd services/dashboard && uv run pytest -q tests/test_dashboard_static.py::test_index_served_at_root tests/test_dashboard_static.py::test_api_routes_win_over_static tests/test_dashboard_static.py::test_get_events_is_405_with_allow_post tests/test_dashboard_static.py::test_post_builds_is_405_with_allow_get tests/test_dashboard_static.py::test_unknown_path_any_method_is_404_envelope tests/test_dashboard_static.py::test_static_asset_served_under_static tests/test_dashboard_static.py::test_unknown_static_path_is_404_envelope tests/test_dashboard_static.py::test_static_asset_wrong_method_is_405 tests/test_dashboard_static.py::test_only_write_endpoint_is_post_events  # exits 0 (errors.yml 404/405 rule kept with the UI served; Q-32: read-only)
   - |-
     test -s services/dashboard/DATA_MODEL.md && test -s docs/tasks/T023.md && python3 scripts/ci/check_shared_copy.py  # exits 0
   - |-
@@ -66,8 +66,14 @@ summary: >
   /artifacts lists every uploaded artifact, also one whose build failed; under option (c) this task's /artifacts
   (and maybe api-dashboard.yml) would change. app/main.py: install(app) from app/errors.py (T022), the routers,
   create_all at startup (app/repos/engine.py reads DASHBOARD_DATABASE_URL with the default under
-  SHIPYARD_DATA_DIR, environment.md SQLite file row), then StaticFiles(directory=<services/dashboard/static>,
-  html=True) mounted at / after the routers. Never edit static/ (frontend-dev, T027) or the T022 copies
+  SHIPYARD_DATA_DIR, environment.md SQLite file row), then the UI without breaking the framework's
+  404/405 routing (review B2: a StaticFiles(html=True) mount at / swallows every path, so GET /events became 404
+  instead of 405 with Allow: POST, and POST /nope became 405 instead of 404): a GET route / (include_in_schema
+  False) answering static/index.html as text/html, and StaticFiles(directory=<services/dashboard/static>)
+  mounted at /static for app.js and style.css; nothing is mounted at /. A wrong method on a static file is
+  405 method_not_allowed with Allow: GET, HEAD (subclass StaticFiles if Starlette omits the header). The
+  static tests check status codes, content types and envelopes only, never the placeholder's content, so T027
+  can replace index.html without editing them. Never edit static/ (frontend-dev, T027) or the T022 copies
   (app/errors.py, tests/openapi_conformance.py, tests/test_shared_*.py). All SQL in app/repos/. Tests use an
   in-memory SQLite URL with StaticPool; tests/test_contract_conformance.py asserts
   differences(app.openapi(), contracts/api-dashboard.yml) == []; every response in the read-API tests is
