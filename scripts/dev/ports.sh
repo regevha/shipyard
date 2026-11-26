@@ -7,14 +7,16 @@
 
 SHIPYARD_SERVICES=(pipeline-runner artifact-store release-service dashboard)
 
-_ports_git_dir="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
-_ports_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+# Check the checkout this script lives in, not the caller's cwd (#149).
+_ports_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_ports_git_dir="$(git -C "$_ports_here" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+_ports_common_dir="$(git -C "$_ports_here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 if [ -n "$_ports_git_dir" ] && [ "$_ports_git_dir" != "$_ports_common_dir" ] \
   && [ -z "${SHIPYARD_SLOT:-}" ]; then
   echo "error: inside an agent worktree SHIPYARD_SLOT must be set explicitly (slot 0 is the lead's)" >&2
   return 1 2>/dev/null || exit 1
 fi
-unset _ports_git_dir _ports_common_dir
+unset _ports_here _ports_git_dir _ports_common_dir
 
 SHIPYARD_SLOT="${SHIPYARD_SLOT:-0}"
 case "$SHIPYARD_SLOT" in
@@ -28,6 +30,14 @@ if [ "$((10#$SHIPYARD_SLOT))" -gt 99 ]; then
   return 1 2>/dev/null || exit 1
 fi
 SHIPYARD_SLOT="$((10#$SHIPYARD_SLOT))"
+
+# Values this file exported for another slot must not carry over into this one (#149):
+# the data dir and database URLs are derived again for the current slot.
+if [ -n "${SHIPYARD_PORTS_SLOT:-}" ] && [ "$SHIPYARD_PORTS_SLOT" != "$SHIPYARD_SLOT" ]; then
+  unset SHIPYARD_DATA_DIR PIPELINE_RUNNER_DATABASE_URL ARTIFACT_STORE_DATABASE_URL \
+    RELEASE_SERVICE_DATABASE_URL DASHBOARD_DATABASE_URL
+fi
+SHIPYARD_PORTS_SLOT="$SHIPYARD_SLOT"
 
 PIPELINE_RUNNER_PORT=$((18000 + 10 * SHIPYARD_SLOT + 0))
 ARTIFACT_STORE_PORT=$((18000 + 10 * SHIPYARD_SLOT + 1))
@@ -46,7 +56,7 @@ ARTIFACT_STORE_DATABASE_URL="${ARTIFACT_STORE_DATABASE_URL:-sqlite:///${SHIPYARD
 RELEASE_SERVICE_DATABASE_URL="${RELEASE_SERVICE_DATABASE_URL:-sqlite:///${SHIPYARD_DATA_DIR}/release_service.db}"
 DASHBOARD_DATABASE_URL="${DASHBOARD_DATABASE_URL:-sqlite:///${SHIPYARD_DATA_DIR}/dashboard.db}"
 
-export SHIPYARD_SLOT SHIPYARD_DATA_DIR
+export SHIPYARD_SLOT SHIPYARD_PORTS_SLOT SHIPYARD_DATA_DIR
 export PIPELINE_RUNNER_PORT ARTIFACT_STORE_PORT RELEASE_SERVICE_PORT DASHBOARD_PORT
 export PIPELINE_RUNNER_URL ARTIFACT_STORE_URL RELEASE_SERVICE_URL DASHBOARD_URL
 export PIPELINE_RUNNER_DATABASE_URL ARTIFACT_STORE_DATABASE_URL

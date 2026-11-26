@@ -15,4 +15,4 @@ fi
 port="$(service_port "$service")"
 mkdir -p "$SHIPYARD_DATA_DIR"
 cd "$root/services/$service"
-exec uv run uvicorn app.main:app --host 127.0.0.1 --port "$port"
+exec uv run --locked uvicorn app.main:app --host 127.0.0.1 --port "$port"
