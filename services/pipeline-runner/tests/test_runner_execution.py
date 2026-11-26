@@ -227,3 +227,34 @@ def test_unexpected_error_in_background_is_logged_not_raised(
     monkeypatch.setattr(app.state.runner, "_upload", boom)
     run = run_to_end(client, steps_body("a"))
     assert run["status"] == "running"  # stays running; the error is only logged
+
+
+def test_b1_400_concurrent_runs_all_reach_a_final_state(
+    tmp_path: Any, fakes: Fakes, settings: Any
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from dataclasses import replace
+    from uuid import uuid4
+
+    from app.main import create_app
+    from app.models import PipelineDefinition
+
+    cfg = replace(settings, database_url=f"sqlite:///{tmp_path}/runner.db")
+    app = create_app(cfg, fakes.transport(), fakes.sleeps.append)
+    with TestClient(app):
+        repo = app.state.repo
+        runner = app.state.runner
+        ids = []
+        for i in range(400):
+            commands = ("a", "fail", "c") if i % 5 == 0 else ("a", "b", "c")
+            definition = PipelineDefinition.model_validate(steps_body(*commands))
+            ids.append(repo.create(uuid4(), definition, "2026-11-25T10:00:00Z").build_id)
+        # the real background path (Runner.execute), 40 runs at once on one file database
+        with ThreadPoolExecutor(max_workers=100) as pool:
+            list(pool.map(runner.execute, ids))
+        runs = [repo.get(i) for i in ids]
+    assert all(r is not None for r in runs)
+    assert {r.status for r in runs if r} <= {"passed", "failed"}
+    assert sum(r.status == "failed" for r in runs if r) == 80
+    assert len(fakes.uploads) == 320
+    assert sum(e["type"] == "build.finished" for e in fakes.events) == 400
