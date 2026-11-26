@@ -63,7 +63,21 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   the lead's reading, not the brief's words: Q-25.)
 - **Options:** (a) settle them in a setup task at the start of wave 2 (they are not needed for contracts);
   (b) treat wave 1 as "wave 0" and add a task now; (c) the user decides them directly.
-- **Status:** `needs-decision`. Recommendation: (a), except inter-service auth, which affects the contracts (Q-09).
+- **Status:** `answered-by-user` (2026-11-26, issue #25): option (a). The wave 2 setup task (T019) proposes these
+  choices in `docs/team/environment.md`; no service task starts until the user approves the proposal. The database
+  is SQLite for every service for now, with data access kept easy to swap (item 1 below). Item 2 below, that the
+  lead decides ports, start commands, script names and per-service setup, was replaced later the same day by the
+  setup-task decision quoted last: the setup task proposes them and the user approves. Inter-service auth stays as
+  decided in Q-09.
+- **User decisions (2026-11-26, #25):**
+
+  > 1. Database (#25, wave 0 decisions): Use SQLite for every service for now. We plan to switch to another database later, so keep data access easy to swap.
+
+  > 2. Ports, start commands, script names, per-service setup (#25): You, the lead, decide these. Set them all in one place (for example docs/environment.md) before any service work starts, so no two services clash.
+
+  Later decision, which replaces item 2:
+
+  > #25 Q-03: a setup task at the start of wave 2 proposes DB/migrations, start command, ports, per-service pyproject; Nir approves.
 
 ### Q-04 Issue labels
 - **Conflict:** the user brief: "Every request or finding in an agent report becomes a GitHub issue labelled
@@ -72,7 +86,11 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   `.github/ISSUE_TEMPLATE/task.yml` applies the label `task`.
 - **Options:** (a) use `todo` in this repo and change the issue template (a synced core file); (b) keep `task`
   and treat `todo` as the status, not a label; (c) apply both.
-- **Status:** `needs-decision`.
+- **Status:** `answered-by-user` (2026-11-26, issue #26): option (b). The label stays `task`; the two open issues
+  labelled `todo` (#36, #112) were relabelled `task` on 2026-11-26. Closed issues keep their old labels.
+- **User decision (2026-11-26, #26):**
+
+  > #26 Q-04: keep "task" as the label; relabel the 2 "todo" issues.
 
 ### Q-05 Number of fix rounds
 - **Brief (verbatim):** "Fix rounds are limited: if the reviewer and architect go around more than twice and the
@@ -83,13 +101,17 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Unclear:** what counts as "going around" (one fix + re-review = one time?), whether the limit is per review or
   per task, and whether it covers only contract disagreements (the brief's wording) or every reviewer/architect
   loop (how the lead applied it to T010).
-- **Default, assumed, pending user:** after two fix rounds on the same review with Blocking items still open, the
-  lead stops and reports; applied to every reviewer/architect loop, not only contracts.
+- **Former default (assumed until the user's answer below):** after two fix rounds on the same review with
+  Blocking items still open, the lead stops and reports; applied to every reviewer/architect loop.
 - **Options:** (a) the user's cap applies in Shipyard and is recorded as a local override; (b) change `lead.md` in
   the shared core.
-- **Status:** `needs-decision` (where to record it, and what "more than twice" counts). Until then the brief's
-  sentence, read as in the default above (a reading that goes beyond "and the contracts still disagree"),
-  outranks the synced process file.
+- **Status:** `answered-by-user` (2026-11-26, issue #27): option (a), a Shipyard-only rule recorded in
+  `docs/team/shipyard-overrides.md` (not synced; it overrides `docs/team/lead.md` § "Workflow" step 5 in this repo).
+  The user's words do not limit it to contracts, so it applies to every review. Counting rounds per review is the
+  lead's reading, not the user's words.
+- **User decision (2026-11-26, #27):**
+
+  > #27 Q-05: after 2 fix rounds with Blocking items still open, stop and report (Shipyard-only rule).
 
 ### Q-06 Required aggregate check
 - **Facts (corrected by T015):** `main` has no classic branch protection (that API returns 404), but it has an
@@ -104,8 +126,13 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Options:** (a) `ci-ok` aggregates `ci.yml` only, and the `Main1` ruleset adds `ci-ok` to the four
   team-checks jobs it already requires; (b) the shared core makes team-checks a reusable workflow (`workflow_call`) that
   `ci.yml` calls, so `ci-ok` covers it; (c) `ci-ok` polls the check-runs API for the head commit (fragile).
-- **Status:** `needs-decision` (issue #28). Changing the ruleset is a repo admin action for the user. T011 built
-  `ci-ok` (merged in PR #51); it is green on main 50d9498 but not yet required.
+- **Status:** `answered-by-user` (2026-11-26, issue #28): option (a). The user added `ci-ok` to ruleset `Main1`
+  himself. The lead checked it on 2026-11-26: `Main1` is active and requires the four team-checks jobs and `ci-ok`
+  (GitHub Actions), with branches up to date; `GET repos/regevha/shipyard/rules/branches/main` lists `ci-ok`; `ci-ok`
+  passed on main 71643fc. Issue #28 is closed.
+- **User decision (2026-11-26, #28):**
+
+  > 3. ci-ok as a required check (#28): I will add ci-ok to the Main1 ruleset myself in the GitHub settings. Do not change repo settings. After I tell you it's done, confirm that ci-ok shows as required.
 
 ### Q-07 The brief is not in the repo
 - **Point:** there was no `docs/PRODUCT.md`, and the user's brief existed only in the lead session (the lead's
@@ -135,8 +162,12 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   command strings when there is no `PRODUCT.md`); (b) a local note in a Shipyard-only file (e.g.
   `docs/team/environment.md`) that overrides those two lines; (c) a per-repo exception list read by CI, like
   `docs/team/branch_exemptions`.
-- **Status:** `needs-decision`. CI does not check either field today (`scripts/ci/check_task_scope.py` reads only
-  `files_touched`), so nothing is blocked yet.
+- **Status:** `answered-by-user` (2026-11-26, issue #35): option (a). The change is made in the shared core and
+  reaches this repo through a `team-sync-` PR; until then `docs/tasks/README.md` here still has the old lines 15 and
+  30. Issue #35 stays open until that sync merges. CI checks neither field, so nothing is blocked.
+- **User decision (2026-11-26, #35):**
+
+  > #35 Q-24: shared-core docs/tasks/README.md adds architect as an owner and allows command strings as acceptance.
 
 ### Q-25 Is CI part of wave 1?
 - **Brief (verbatim):** "Wave 1 is CONTRACTS ONLY. Write no service code." and, separately, "Set up CI from day
@@ -144,8 +175,10 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   every example in the contracts validates against its schema." The wave 1 deliverables list does not name CI.
 - **Point:** `docs/PLAN.md` calls wave 1 "contracts + CI" and plans T011 (CI) inside it. That placement is the
   lead's reading of "from day one", not a sentence of the brief.
-- **Status:** `needs-decision` (what the user meant). Default, **assumed, pending user**: CI is built in wave 1
-  (T011), because day one is wave 1.
+- **Status:** `answered-by-user` (2026-11-26, issue #40): the former default. CI belongs in wave 1 (T011).
+- **User decision (2026-11-26, #40):**
+
+  > #40 Q-25: confirmed, CI belongs in wave 1.
 
 ### Q-26 Contract file formats and the checker rules
 - **Point:** the brief says what each contract file contains, not its format. OpenAPI 3.1.0 for `api-*.yml`,
@@ -161,8 +194,11 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   wave 2."
 - **Point:** `docs/PLAN.md` § "Waves" puts the services in wave 2 and the queue, auth, retries, persistence and
   e2e flows in wave 3. That split is the lead's outline, not the brief's.
-- **Status:** `needs-decision` (what the user wants in each wave). Default, **assumed, pending user**: the outline
-  in `docs/PLAN.md`, to be confirmed before wave 2 is planned in detail.
+- **Status:** `answered-by-user` (2026-11-26, issue #41): the outline in `docs/PLAN.md` § "Waves" stands, with
+  wave 2 narrowed to the thinnest slice through all four services.
+- **User decision (2026-11-26, #41):**
+
+  > #41 Q-27: confirmed, wave 2 = thinnest slice through all four services; wave 3 = queue, auth, retries, persistence, e2e.
 
 ## Ambiguities the contracts must settle (for T012)
 
@@ -232,7 +268,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   `POST /releases/{id}/promote`; it returns 409 unless the release is approved and records `promoted_at`;
   promotion is a recorded state change only; a release references one artifact (name + version); any client may
   call it; release-service does not call artifact-store to check the artifact exists. `x-assumed: [Q-16]` is
-  removed from the contracts. Whether the dashboard pages may call it from the browser remains open (Q-32).
+  removed from the contracts. Whether the dashboard pages may call it from the browser was open until the user's Q-32 answer (#89, no dashboard buttons in wave 2).
 - **User decision (2026-11-25, #32):**
 
   > #32 (Q-16) Promotion: keep the T012 default. POST /releases/{id}/promote, 409 unless approved, records promoted_at, state change only; a release references one artifact (name + version); any client may call it; no existence check against artifact-store.
@@ -262,7 +298,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Status:** `answered-by-user` (2026-11-25, issue #34): steps are simulated until wave 3, a variant of option
   (b) that keeps the shape `{name, steps: [{name, command}]}` (no per-step outcome field). The runner records
   each `command` and never executes it, and fakes each step's result. `x-assumed: [Q-19]` is removed from the
-  contracts. How a faked step comes out failed is not decided: Q-33 (issue #107).
+  contracts. How a faked step comes out failed was settled later by the user's Q-33 answer (#107).
 - **User decision (2026-11-25, #34):**
 
   > #34 (Q-19) Pipeline steps: simulated until wave 3 (no real shell commands). Shape stays {name, steps:[{name, command}]}; the runner fakes each step's result.
@@ -270,9 +306,10 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 ### Q-20 Run lifecycle
 - **Status:** `open`. T012 default, **assumed, pending user**: `POST /runs` returns 202 with the run ID and runs
   in the background; `GET /runs/{id}` gives the status and per-step results; steps run in order and the run stops
-  at the first failed step; no cancel and no re-run in wave 1-2; the runner uploads artifacts after a passed run.
-  Which files a step produces as artifacts depended on Q-19; the user's Q-19 answer (#34: simulated steps) does
-  not say, so it is now Q-34 (#110, needs-decision).
+  at the first failed step; no cancel and no re-run in wave 1-2. The default's last part, that the runner uploads
+  artifacts after a passed run, is superseded by the user's answers on Q-34 (#110: one fake artifact per build
+  whose steps all passed) and Q-36 (#120: the upload runs before the build is marked passed, and a failed upload
+  fails the build).
 
 ### Q-21 Error envelope vs FastAPI defaults
 - **Point:** the brief asks for one shared error envelope. FastAPI's built-in errors use `{"detail": ...}` and its
@@ -288,8 +325,10 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 ### Q-23 Dashboard read API
 - **Point:** the frontend's JavaScript must fetch data from somewhere: the dashboard's own JSON endpoints (built
   from received events) or the other services directly.
-- **Status:** `open`. T012 default, **assumed, pending user**: only the dashboard's own JSON endpoints; the
-  dashboard never calls the other services.
+- **Status:** `resolved` by T017 (PR #123), following the user's Q-32 decision (#89): the frontend fetches
+  only the dashboard's own JSON endpoints and the dashboard calls no other service. The user did not answer Q-23 in
+  his own words; the lead read the #89 decision (no dashboard buttons, decide and promote go straight to
+  release-service) as settling it, and T017 removed `x-assumed: [Q-23]`. Revisit in wave 3.
 
 ### Q-28 Run or build: one name for one concept
 - **Point (found by T012):** the brief speaks of builds (build started, build finished) and the runner's job as
@@ -299,47 +338,62 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Options:** (a) one run is one build: the identifier is `build_id` in every file and the runner's paths stay
   `/runs` (`GET /runs/{build_id}`); (b) rename the runner's resource to `/builds`; (c) call it `run_id`
   everywhere and rename the events' fields.
-- **Status:** `open`. T012 default, **assumed, pending user**: (a). Marked on `events.yml#/$defs/BuildId` and on
-  the runner's `Run` schema.
+- **Status:** `answered-by-user` (2026-11-26, issue #85): option (a), the former T012 default. T017 (PR #123) removed
+  `x-assumed: [Q-28]` from `events.yml#/$defs/BuildId` and the runner's `Run` schema.
+- **User decision (2026-11-26, #85):**
+
+  > #85 Q-28: one run = one build; build_id everywhere; runner paths stay /runs/{build_id}.
 
 ### Q-29 Allowed characters in an artifact name
 - **Point (found by T012):** the Q-18 default puts the artifact name in the URL path (`/artifacts/{name}`). Nothing
   says which characters a name may have (a slash, spaces, a length limit), or whether names are case-sensitive.
-- **Status:** `open`, no default. The contracts only require a non-empty string (`events.yml#/$defs/ArtifactName`)
-  and say the rule is not settled.
-- **Known gap (review of T012, issue #103):** `ArtifactName` currently accepts `/`, which cannot be the
-  `{name}` path segment (a name like `a/b` would not route to `/artifacts/{name}`). Not settled here: rejecting
-  `/`, percent-encoding it, or another rule is part of this question.
+- **Status:** `answered-by-user` (2026-11-26, issue #86). T017 (PR #123) gives `events.yml#/$defs/ArtifactName`
+  and the store's `{name}` parameter the pattern `^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$` with a guard against a
+  trailing newline. This also closes the gap below (#103): `/` is rejected. Pipeline names follow the same rule
+  (Q-35).
+- **User decision (2026-11-26, #86):**
+
+  > #86 Q-29: artifact names: letters, digits, . - _; starts with a letter or digit; 1-100 chars; case-sensitive; no / or spaces.
+- **Former gap (review of T012, issue #103), closed by the answer above:** `ArtifactName` accepted `/`, which
+  cannot be the `{name}` path segment (a name like `a/b` would not route to `/artifacts/{name}`).
 
 ### Q-30 Who requested a release
 - **Point (found by T012):** the brief asks release-service to record who and when for the decision, not for the
   request. The Q-10 default mentions no self-approval rule, which only matters if the requester is known.
 - **Options:** (a) the request body carries a free-string `requested_by`, like `decided_by`; (b) not recorded.
-- **Status:** `needs-decision` (issue #87). T012 default, **assumed, pending user** (placeholder set by the lead,
-  review issue #94): (b), the requester is not recorded. Marked with `x-assumed: [Q-30]` on
-  `api-release-service.yml` `ReleaseRequest` and `Release` and on `events.yml#/$defs/ReleaseRequestedData`.
-  Choosing (a) later is a contract change.
+- **Status:** `answered-by-user` (2026-11-26, issue #87): option (a). T017 (PR #123) adds a required free-string
+  `requested_by` to `ReleaseRequest`, `Release` and `ReleaseRequestedData` (and a nullable one to the dashboard's
+  `ReleaseView`) and removes `x-assumed: [Q-30]`.
+- **User decision (2026-11-26, #87):**
+
+  > #87 Q-30: record a free-string requested_by on the request; remove x-assumed [Q-30].
 
 ### Q-31 Promoting twice, and promotion on the dashboard
 - **Point (found by T012):** the user's Q-16 decision (#32) returns 409 unless the release is approved and records
   `promoted_at`; it does not say what a second promote of an approved, already promoted release returns (200 and
-  unchanged, 200 with a new time, or 409). This part is open.
+  unchanged, 200 with a new time, or 409). This part was open until the user's answer below.
 - **Settled by the user, consequence noted:** the user's Q-14 decision (#31) has no promotion event, so the
   dashboard cannot show whether a release was promoted, although the brief's blocking of promotion is the point
   of release-service. That follows from the decision and is not reopened here; showing promotions on the
   dashboard would need the user to revisit Q-14.
-- **Status:** `open`, no default. The contracts leave the second promote unspecified (said in the operation's
-  description) and the dashboard's release view has no promotion field.
+- **Status:** `answered-by-user` (2026-11-26, issue #88) for the second promote: 200 with the release unchanged,
+  written into T017 (PR #123). Promotion stays off the dashboard (Q-14 not reopened).
+- **User decision (2026-11-26, #88):**
+
+  > #88 Q-31: second promote returns 200 unchanged; promoted_at keeps the first time.
 
 ### Q-32 Who calls decision and promote, and from where
 - **Point (found by T012):** the user's Q-16 decision (#32) says any client may call promote (decided). The Q-23
-  default (still assumed, pending user) says the frontend fetches only the dashboard's own endpoints and the
-  dashboard never calls the other services. The clash below remains open. If people approve, reject or promote from the dashboard pages, the browser either calls
+  default (then still assumed; now resolved by T017) says the frontend fetches only the dashboard's own endpoints
+  and the dashboard never calls the other services. The clash below was open until the user's answer. If people approve, reject or promote from the dashboard pages, the browser either calls
   release-service directly (needs CORS, and the pages need release-service's address) or the dashboard forwards
   the call (the dashboard then calls another service, against Q-23). Nothing says who calls the decision endpoint
   at all.
-- **Status:** `open`, no default. The contracts list the caller as any client and add no dashboard write
-  endpoint; the who-calls-whom table in `contracts/api-dashboard.yml` points here.
+- **Status:** `answered-by-user` (2026-11-26, issue #89). Decide and promote are called by any client directly on
+  release-service; the dashboard has no write endpoint besides `POST /events` (T017, PR #123). Revisit in wave 3.
+- **User decision (2026-11-26, #89):**
+
+  > #89 Q-32: no dashboard buttons in wave 2; decide/promote go straight to release-service.
 
 ### Q-33 How a simulated step comes out failed
 - **Point (follows from the user's Q-19 decision, #34):** steps are simulated until wave 3, the shape stays
@@ -350,8 +404,11 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   (b) a convention inside `command`, for example a command of exactly `fail` fails and anything else passes;
   (c) random with a fixed seed or rate (non-deterministic tests); (d) change the shape after all, for example an
   optional per-step `simulate: passed|failed` (contradicts the decision that the shape stays).
-- **Status:** `needs-decision` (issue #107), no default. The contracts fix no mechanism; `contracts/api-pipeline-runner.yml`
-  says this is open. Blocks wave 2 runner behaviour, not the wave 1 contract shape.
+- **Status:** `answered-by-user` (2026-11-26, issue #107): option (b), string equality on `command`; written into
+  T017 (PR #123).
+- **User decision (2026-11-26, #107):**
+
+  > #107 Q-33: a step whose command is exactly "fail" fails; anything else passes.
 
 ### Q-34 Which artifacts a simulated run uploads
 - **Point (found by T012, fix round 2):** the Q-20 default left the artifacts a run produces to Q-19. The user's
@@ -359,5 +416,35 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   what, if anything, a simulated run uploads to artifact-store.
 - **Options:** (a) nothing until wave 3; (b) one fake artifact per passed build, named after the pipeline; (c) the
   definition names its outputs (a shape change, against the user's decision); (d) a step `command` convention.
-- **Status:** `needs-decision` (issue #110), no default. `contracts/api-pipeline-runner.yml` says it is not
-  settled. Blocks the wave 2 runner-to-store upload.
+- **Status:** `answered-by-user` (2026-11-26, issue #110): option (b), written into T017 (PR #123) together with
+  #112. When the upload runs and what a failed upload means: Q-36. Pipeline names that are not valid artifact
+  names: Q-35.
+- **User decision (2026-11-26, #110):**
+
+  > 4. Artifacts from a simulated run (Q-34, #110): Option (b). Each passed build uploads one fake artifact to artifact-store, named after the pipeline. Failed builds upload nothing. Add this to the contract change requests for the wave 2 start, together with #112.
+
+### Q-35 A valid pipeline name can be an invalid artifact name
+- **Point (found by T017, issue #119):** Q-34 names the fake artifact after the pipeline, but `PipelineName` was any
+  non-empty string, so a pipeline such as `my pipeline` or `a/b` could run and then fail the Q-29 artifact-name rule.
+- **Options:** (a) pipeline names follow the artifact-name rule and a bad name is rejected when the run is created;
+  (b) the runner converts the name to a valid artifact name; (c) skip the upload for such names.
+- **Status:** `answered-by-user` (2026-11-26, issue #119): option (a), written into T017 (PR #123):
+  `events.yml#/$defs/PipelineName` has the `ArtifactName` rule and `POST /runs` answers 422 for a bad name.
+- **User decision (2026-11-26, #119):**
+
+  > #119: Pipeline names use the same rule as artifact names (Q-29): letters, digits, . - _; starts with a letter or digit; 1-100 chars; case-sensitive. A bad name is rejected with 422 when the pipeline is created. No slugifying.
+
+### Q-36 When the fake artifact is uploaded, and a failed upload
+- **Point (found by T017, issue #120):** Q-34 does not say whether the upload happens before or after
+  `build.finished`, or what a failed upload means for the build.
+- **Status:** `answered-by-user` (2026-11-26, issue #120): the upload runs after the last step passes and before the
+  build is marked passed (so before `build.finished`, the contract's reading); a failed upload fails the build with the reason
+  `artifact upload failed`; no retries in wave 2. Written into T017 (PR #123). How the reason is carried is the
+  contract's choice, not the user's: a required, nullable `failure_reason` in the runner's `Run`,
+  `BuildFinishedData` and the dashboard's `BuildView`, whose only value is that text. The contracts read "fails" as
+  one attempt where anything but a 201 counts, including a network error or a timeout. Follow-ups: issue #131
+  (`needs-decision`: a timeout after the store saved the bytes leaves an artifact for a failed build) and issue
+  #132 (the wave 2 runner task picks the timeout).
+- **User decision (2026-11-26, #120):**
+
+  > #120: The fake upload runs after the last step passes and before the build is marked passed. If the upload fails, the build is failed with reason "artifact upload failed". No retries in wave 2.
