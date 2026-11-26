@@ -3,7 +3,9 @@
 
   var REFRESH_MS = 5000;
   var DASH = '—';
+  var TIMEOUT_MS = 10000;
   var inFlight = false;
+  var lastOk = null;
 
   function el(tag, text, cls) {
     var node = document.createElement(tag);
@@ -124,12 +126,16 @@
     // Keep the last good rows visible; say that they may be out of date.
     var state = document.getElementById(view.id + '-state');
     state.className = 'state error';
-    state.textContent = 'Could not load ' + view.id + ': ' + message + '. Retrying in 5 seconds.';
+    var stale = !document.getElementById(view.id + '-wrap').hidden;
+    state.textContent = 'Could not load ' + view.id + ': ' + message + '. ' +
+      (stale ? 'Showing the last data received. ' : '') + 'Retrying in 5 seconds.';
     state.hidden = false;
   }
 
   function load(view) {
-    return fetch(view.url, { headers: { Accept: 'application/json' }, cache: 'no-store' })
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, TIMEOUT_MS);
+    return fetch(view.url, { headers: { Accept: 'application/json' }, cache: 'no-store', signal: ctl.signal })
       .then(function (res) {
         if (!res.ok) throw new Error('server answered ' + res.status);
         return res.json();
@@ -140,8 +146,14 @@
         return true;
       })
       .catch(function (err) {
-        showError(view, err && err.message ? err.message : 'request failed');
+        var msg = err && err.name === 'AbortError' ? 'no answer after 10 seconds'
+          : err && err.message ? err.message : 'request failed';
+        showError(view, msg);
         return false;
+      })
+      .then(function (ok) {
+        clearTimeout(timer);
+        return ok;
       });
   }
 
@@ -152,9 +164,10 @@
       inFlight = false;
       var note = document.getElementById('last-updated');
       if (results.every(Boolean)) {
-        note.textContent = 'Last updated ' + new Date().toLocaleTimeString() + '.';
+        lastOk = new Date().toLocaleTimeString();
+        note.textContent = 'Last updated ' + lastOk + '.';
       } else {
-        note.textContent = 'Some data could not be refreshed.';
+        note.textContent = (lastOk ? 'Last updated ' + lastOk + '. ' : '') + 'Some data could not be refreshed.';
       }
     });
   }
