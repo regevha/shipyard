@@ -23,8 +23,9 @@ info:
     `promoted_at` keeps the time of the first promote (user decision, Q-31, #88).
 
 
-    Who calls decide and promote (user decision, Q-32, #89): in wave 2 a person calls them directly on
-    release-service, with curl or a script. The dashboard pages have no approve, reject or promote buttons and
+    Who calls decide and promote (user decision, Q-32, #89): any client (for promote: user decision, Q-16, #32),
+    directly on release-service, for example curl or a script, never through the dashboard. In wave 2 the
+    dashboard pages have no approve, reject or promote buttons and
     never call this service (the dashboard stays read-only); to be revisited in wave 3.
 
 
@@ -112,8 +113,8 @@ paths:
       operationId: decideRelease
       summary: Record the approve or reject decision
       description: >
-        Called by a person with curl or a script, never by the dashboard (user decision, Q-32, #89). Records the
-        decision, who made it (`decided_by`, as sent) and when (`decided_at`, set by the server), and
+        Called by any client directly on release-service (for example curl or a script), never through the
+        dashboard (user decision, Q-32, #89). Records the decision, who made it (`decided_by`, as sent) and when (`decided_at`, set by the server), and
         answers 200 with the updated release. Error precedence: 422 for a malformed path parameter, then 404,
         then 422 for the body, then 409 release_already_decided.
       parameters:
@@ -180,7 +181,8 @@ paths:
         the release status is `approved` (user decision, Q-16, #32). Promoting a release that already has
         `promoted_at` is 200 with the release unchanged: `promoted_at` keeps the time of the first promote and
         nothing else changes (user decision, Q-31, #88). No event is sent for a promotion (user decision, Q-14,
-        #31). Called by a person with curl or a script, never by the dashboard (user decision, Q-32, #89). Error
+        #31). Any client may call it (user decision, Q-16, #32), directly on release-service (for example curl
+        or a script), never through the dashboard (user decision, Q-32, #89). Error
         precedence: 422 for a malformed path parameter, then 404, then 409.
       parameters:
         - $ref: "#/components/parameters/ReleaseId"

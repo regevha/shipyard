@@ -158,6 +158,13 @@ components:
         framework answers for such a URL (404 or 405) is routing, not this operation.
       schema:
         $ref: "events.yml#/$defs/ArtifactName"
+      examples:
+        pipeline-name:
+          summary: The fake artifact of a passed build of pipeline shipyard-api (Q-34, #110)
+          value: shipyard-api
+        mixed:
+          summary: Letters, digits, `.` and `_`; case-sensitive
+          value: Web_2.1
 
   responses:
     NotFound:

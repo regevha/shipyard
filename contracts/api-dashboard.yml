@@ -11,7 +11,7 @@ info:
     The frontend fetches only this service's own JSON endpoints, built from the events it received; the
     dashboard never calls the other services. It is read-only: in wave 2 it has no approve, reject or promote
     buttons and no write endpoint other than receiving events (user decision, Q-32, #89, which confirms the
-    Q-23 default; to be revisited in wave 3).
+    Q-23 default; revisit in wave 3).
 
     Authentication: none in waves 1-2 (user decision, Q-09, #29): anyone who can reach `POST /events` can post an
     event. There is no security scheme.
@@ -20,25 +20,26 @@ info:
 
     | Caller | Callee | Endpoint | When |
     | --- | --- | --- | --- |
-    | any client (a person or a tool) | pipeline-runner | `POST /runs` | to start a run of a pipeline definition |
+    | any client | pipeline-runner | `POST /runs` | to start a run of a pipeline definition |
     | any client | pipeline-runner | `GET /runs/{build_id}` | to follow a run's status and steps |
     | pipeline-runner | dashboard | `POST /events` (`build.started`) | when a run's first step starts |
     | pipeline-runner | dashboard | `POST /events` (`build.finished`) | when a run ends, passed or failed |
-    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after a passed run, exactly once: one fake artifact, `name` = the pipeline name; a failed run uploads nothing (user decision, Q-34, #110) |
+    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after a passed run, exactly once: one fake artifact, `name` = the pipeline name; a failed run uploads nothing (user decision, Q-34, #110); order relative to `build.finished` and what happens when the upload fails: open (#120) |
     | artifact-store | dashboard | `POST /events` (`artifact.uploaded`) | after an upload is stored |
     | any client | artifact-store | `GET /artifacts/{name}/versions/{version}` | to download a stored version |
     | any client | release-service | `POST /releases` | to request a release of one artifact version |
     | release-service | dashboard | `POST /events` (`release.requested`) | after a release is created |
-    | a person, with curl or a script (user decision, Q-32, #89) | release-service | `POST /releases/{release_id}/decision` | to approve or reject |
+    | any client, directly on release-service (for example curl or a script), never through the dashboard (user decision, Q-32, #89) | release-service | `POST /releases/{release_id}/decision` | to approve or reject |
     | release-service | dashboard | `POST /events` (`release.decided`) | after a decision is recorded |
-    | a person, with curl or a script (user decisions, Q-16, #32 and Q-32, #89) | release-service | `POST /releases/{release_id}/promote` | to promote an approved release; again on a promoted one: 200, unchanged (user decision, Q-31, #88); no event (user decision, Q-14, #31) |
+    | any client (user decision, Q-16, #32), directly on release-service (for example curl or a script), never through the dashboard (user decision, Q-32, #89) | release-service | `POST /releases/{release_id}/promote` | to promote an approved release; again on a promoted one: 200, unchanged (user decision, Q-31, #88); no event (user decision, Q-14, #31) |
     | any client | release-service | `GET /releases/{release_id}` | to read one release |
     | dashboard web pages (browser) | dashboard | `GET /builds`, `GET /artifacts`, `GET /releases` | to refresh the views (read only) |
 
     No service calls pipeline-runner or release-service; artifact-store and release-service never call each
     other (user decision, Q-16, #32). The dashboard (service and web pages) calls no other service and has no
-    write endpoint besides `POST /events`; decide and promote are called directly on release-service by a
-    person with curl or a script, never through the dashboard (user decision, Q-32, #89).
+    write endpoint besides `POST /events`. Decide and promote are called on release-service directly (for
+    example curl or a script), never through the dashboard (user decision, Q-32, #89); any client may call
+    promote (user decision, Q-16, #32).
 
     ## Event delivery (Q-11 default, assumed, pending user)
 

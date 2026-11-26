@@ -7,16 +7,17 @@ info:
 
 
     Calls it makes (see the table in api-dashboard.yml): it POSTs `build.started` and `build.finished` events to
-    the dashboard's `POST /events`, and after a passed run uploads artifacts with artifact-store's
-    `POST /artifacts/{name}` (Q-20 default).
+    the dashboard's `POST /events`, and after a passed build uploads one fake artifact with artifact-store's
+    `POST /artifacts/{name}`; a failed build uploads nothing (user decision, Q-34, #110).
 
 
     Uploads (user decision, Q-34, #110; this also settles review note #112): each passed build uploads exactly
     one fake artifact, named after the pipeline (`name` = the definition's `name`, the run's `pipeline_name`),
     with `POST /artifacts/{pipeline_name}?build_id=<the run's build_id>`. A failed build uploads nothing. The
-    bytes of the fake artifact are not part of the decision; any placeholder content is allowed. A pipeline
-    name that is not a valid artifact name (events.yml ArtifactName, Q-29, #86) is not settled and has been
-    raised with the lead (T017 hand-off).
+    bytes of the fake artifact are not part of the decision; any placeholder content is allowed. Open: what
+    happens for a pipeline name that is not a valid artifact name (events.yml ArtifactName, Q-29, #86), issue
+    #119; the order of this upload relative to `build.finished` and what happens when the upload fails, issue
+    #120.
 
 
     Naming: one run is one build. Its ID is `build_id` in every file (events, artifact uploads, dashboard); the
@@ -45,7 +46,8 @@ paths:
         `command` is never executed (user decision, Q-19, #34): a command of exactly `fail` fails, any other
         passes (user decision, Q-33, #107). The runner sends `build.started` when the first step starts and
         `build.finished` when the run ends; a passed run also uploads one fake artifact named after the
-        pipeline to artifact-store, a failed run uploads nothing (user decision, Q-34, #110). No cancel and no re-run (Q-20 default). Two steps
+        pipeline to artifact-store, a failed run uploads nothing (user decision, Q-34, #110; order relative to
+        `build.finished` and upload failure: open, #120). No cancel and no re-run (Q-20 default). Two steps
         with the same name are 422 validation_failed.
       requestBody:
         required: true

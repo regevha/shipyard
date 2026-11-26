@@ -427,7 +427,7 @@ $defs:
       build uploads one fake artifact named after the pipeline (user decision, Q-34, #110), so this name is
       also used as an ArtifactName. This schema is not restricted to the ArtifactName rule: what happens for a
       pipeline name that is not a valid ArtifactName (for example one with a space or `/`, or longer than 100
-      characters) is not settled and has been raised with the lead (T017 hand-off).
+      characters) is open, issue #119.
     type: string
     minLength: 1
     examples: [shipyard-api]
