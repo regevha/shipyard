@@ -6,7 +6,7 @@ import re
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$")
@@ -71,11 +71,20 @@ FailureReason = Literal["artifact upload failed"]
 StepStatus = Literal["pending", "running", "passed", "failed", "skipped"]
 BuildStatus = Literal["running", "passed", "failed"]
 ReleaseStatus = Literal["pending", "approved", "rejected"]
+
+
+def _not_bool(value: object) -> object:
+    if isinstance(value, bool):
+        raise ValueError("must be the integer 1")
+    return value
+
+
+SchemaVersion = Annotated[Literal[1], BeforeValidator(_not_bool)]
 Decision = Literal["approved", "rejected"]
 
 
 class Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class StepResult(Strict):
@@ -168,7 +177,7 @@ class ReleaseDecidedData(Strict):
 
 class EventBase(Strict):
     event_id: Uuid
-    schema_version: Literal[1]
+    schema_version: SchemaVersion
     occurred_at: Timestamp
 
 

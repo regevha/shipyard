@@ -18,6 +18,8 @@ from app.models import (
 )
 from app.repos.tables import ArtifactRow, BuildRow, ReleaseRow
 
+_MAX_OFFSET = 2**62  # below SQLite's int64 limit; any larger offset is past the end anyway
+
 
 def list_builds(session: Session, limit: int, offset: int, status: BuildStatus | None) -> BuildPage:
     query = select(BuildRow)
@@ -26,7 +28,7 @@ def list_builds(session: Session, limit: int, offset: int, status: BuildStatus |
     elif status is not None:
         query = query.where(BuildRow.outcome == status)
     query = query.order_by(BuildRow.last_event_at.desc(), BuildRow.build_id).limit(limit)
-    rows = session.scalars(query.offset(offset)).all()
+    rows = session.scalars(query.offset(min(offset, _MAX_OFFSET))).all()
     items = [
         BuildView(
             build_id=r.build_id,
@@ -56,7 +58,7 @@ def list_artifacts(session: Session, limit: int, offset: int) -> ArtifactPage:
         select(ArtifactRow)
         .order_by(ArtifactRow.uploaded_ts.desc(), ArtifactRow.name, ArtifactRow.version)
         .limit(limit)
-        .offset(offset)
+        .offset(min(offset, _MAX_OFFSET))
     ).all()
     items = [
         Artifact(
@@ -83,7 +85,7 @@ def list_releases(session: Session, limit: int, offset: int) -> ReleasePage:
         select(ReleaseRow)
         .order_by(ReleaseRow.last_event_at.desc(), ReleaseRow.release_id)
         .limit(limit)
-        .offset(offset)
+        .offset(min(offset, _MAX_OFFSET))
     ).all()
     items = [
         ReleaseView(

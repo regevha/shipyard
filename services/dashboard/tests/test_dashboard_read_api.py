@@ -253,3 +253,11 @@ def test_get_events_after_restart_keeps_data(tmp_path: Any, monkeypatch: Any) ->
             else:
                 assert len(client.get("/builds").json()["items"]) == 1
     engine_module.get_engine.cache_clear()
+
+
+def test_huge_offset_is_200_with_empty_list(client: TestClient, post: Post) -> None:
+    post(build_started(new_id()))
+    for offset in (2**63, 2**63 - 1, 10**30):
+        for path in ("/builds", "/artifacts", "/releases"):
+            body = client.get(path, params={"offset": offset}).json()
+            assert body["items"] == [] and body["offset"] == offset

@@ -4,6 +4,8 @@ from typing import Any
 
 import pytest
 from conftest import (
+    STEP_FAIL,
+    STEP_SKIPPED,
     Body,
     artifact_uploaded,
     build_finished,
@@ -102,6 +104,9 @@ def _mutations() -> list[Callable[[Body], None]]:
         lambda e: e["data"].update(pipeline_name="-x"),
         lambda e: e["data"].update(pipeline_name="a" * 101),
         lambda e: e["data"].pop("build_id"),
+        lambda e: e.update(schema_version="1"),
+        lambda e: e.update(schema_version=True),
+        lambda e: e["data"].update(build_id=5),
     ]
 
 
@@ -149,6 +154,23 @@ def test_build_finished_state_table_violations_are_422(client: TestClient) -> No
     e = build_finished(new_id())
     e["data"]["steps"][0]["finished_at"] = None  # passed step without finish time
     bad.append(e)
+    e = build_finished(new_id())
+    e["data"]["steps"][0] = {**STEP_FAIL}  # passed outcome with a failed step
+    bad.append(e)
+    e = build_finished(new_id())
+    e["data"]["steps"].append({**STEP_SKIPPED})  # passed outcome with a skipped step
+    bad.append(e)
+    e = build_finished(new_id(), outcome="failed")
+    e["data"]["steps"].insert(0, {**STEP_FAIL, "name": "lint"})  # two failed steps
+    bad.append(e)
+    e = build_finished(new_id(), outcome="failed")
+    e["data"]["steps"][2] = {
+        "name": "package",
+        "status": "running",
+        "started_at": "2026-11-25T10:00:00Z",
+        "finished_at": None,
+    }
+    bad.append(e)
     for event in bad:
         assert client.post("/events", json=event).status_code == 422, event
 
@@ -169,3 +191,17 @@ def test_event_is_readable_right_after_202(client: TestClient) -> None:
         assert client.post("/events", json=build_started(build_id)).status_code == 202
         ids = [i["build_id"] for i in client.get("/builds", params={"limit": 200}).json()["items"]]
         assert build_id in ids
+
+
+@pytest.mark.parametrize("bad", ["3", True, 3.5, None])
+def test_integer_fields_reject_other_json_types(client: TestClient, bad: Any) -> None:
+    for field in ("version", "size_bytes"):
+        event = artifact_uploaded()
+        event["data"][field] = bad
+        assert client.post("/events", json=event).status_code == 422, (field, bad)
+    for make in (release_requested, release_decided):
+        event = make(new_id())
+        event["data"]["artifact"]["version"] = bad
+        assert client.post("/events", json=event).status_code == 422, (make, bad)
+    assert client.get("/artifacts").json()["items"] == []
+    assert client.get("/releases").json()["items"] == []
