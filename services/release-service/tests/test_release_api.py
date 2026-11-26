@@ -135,6 +135,7 @@ def test_decision_enum_rejects_values_outside_the_contract(client: TestClient, v
         json={"decision": value, "decided_by": "dana"},
     )
     assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["location"] == "body.decision"
     assert client.get(f"/releases/{release['release_id']}").json()["status"] == "pending"
 
 
@@ -217,12 +218,24 @@ def test_decide_error_precedence(client: TestClient) -> None:
     # 422 path before 404 and body
     assert client.post("/releases/not-a-uuid/decision", json=bad_body).status_code == 422
     # 404 before 422 body (also for a body that is not even JSON)
-    for kwargs in ({"json": bad_body}, {"content": b"{oops"}, {}):
+    json_header = {"content-type": "application/json"}  # what curl and real clients send
+    for kwargs in (
+        {"json": bad_body},
+        {"content": b"{oops", "headers": json_header},
+        {"content": b"", "headers": json_header},
+        {"content": b'{"decision":"approved"}', "headers": json_header},
+        {},
+    ):
         response = client.post(f"/releases/{UNKNOWN}/decision", **kwargs)
         assert response.status_code == 404, kwargs
         assert error_code(response) == "not_found"
-    # 422 body before 409
+    # 422 body (invalid JSON too) before 409
     decide(client, rid, "approved")
+    broken = client.post(
+        f"/releases/{rid}/decision", content=b"{oops", headers={"content-type": "application/json"}
+    )
+    assert broken.status_code == 422
+    assert broken.json()["error"]["details"][0]["location"] == "body"
     response = client.post(f"/releases/{rid}/decision", json=bad_body)
     assert response.status_code == 422
     assert error_code(response) == "validation_failed"
@@ -250,7 +263,19 @@ def test_malformed_release_id_is_422_on_every_route(client: TestClient, method: 
         assert response.json()["error"]["details"][0]["location"] == "path.release_id"
 
 
-@pytest.mark.parametrize("path", [str(2**64), str(2**200), "-1", "0"])
+ODD_IDS = [
+    str(2**64),
+    str(2**200),
+    "-1",
+    "0",
+    UNKNOWN.replace("-", ""),  # 32 hex digits without hyphens
+    "{" + UNKNOWN + "}",
+    "urn:uuid:" + UNKNOWN,
+    " " + UNKNOWN,
+]
+
+
+@pytest.mark.parametrize("path", ODD_IDS)
 def test_huge_or_odd_ids_are_422_never_500(client: TestClient, path: str) -> None:
     for call in (
         client.get(f"/releases/{path}"),
@@ -258,6 +283,13 @@ def test_huge_or_odd_ids_are_422_never_500(client: TestClient, path: str) -> Non
         client.post(f"/releases/{path}/decision", json={"decision": "approved", "decided_by": "d"}),
     ):
         assert call.status_code == 422
+
+
+def test_uppercase_hyphenated_id_is_accepted(client: TestClient) -> None:
+    rid = make_release(client)["release_id"]
+    assert client.get(f"/releases/{rid.upper()}").json()["release_id"] == rid
+    assert decide(client, rid.upper()).status_code == 200
+    assert client.post(f"/releases/{rid.upper()}/promote").status_code == 200
 
 
 def test_every_response_validates_against_contract_schema(client: TestClient) -> None:
