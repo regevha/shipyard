@@ -100,6 +100,14 @@ paths:
                       details:
                         - location: query.build_id
                           message: field required
+                invalid-name:
+                  value:
+                    error:
+                      code: validation_failed
+                      message: request validation failed
+                      details:
+                        - location: path.name
+                          message: must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$
                 checksum-mismatch:
                   value:
                     error:
@@ -142,7 +150,12 @@ components:
       name: name
       in: path
       required: true
-      description: Artifact name; allowed characters are not settled (Q-29).
+      description: >
+        Artifact name (user decision, Q-29, #86; rule in events.yml ArtifactName): letters, digits, `.`, `-`, `_`,
+        first character a letter or digit, 1-100 characters, case-sensitive. A `{name}` segment that breaks the
+        rule, for example one of 101 characters, `my app` (sent encoded) or `-app`, is 422 validation_failed.
+        `a/b` and the empty name are invalid too, but they cannot be sent as one `{name}` segment; what the
+        framework answers for such a URL (404 or 405) is routing, not this operation.
       schema:
         $ref: "events.yml#/$defs/ArtifactName"
 

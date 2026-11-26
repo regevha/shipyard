@@ -206,6 +206,7 @@ $defs:
           artifact:
             name: shipyard-api
             version: 3
+          requested_by: sam
           requested_at: "2026-11-25T10:10:00Z"
 
   ReleaseDecided:
@@ -340,18 +341,19 @@ $defs:
             finished_at: null
 
   ReleaseRequestedData:
-    x-assumed: [Q-30]
     description: >
-      Payload of release.requested. Who requested the release is not recorded (Q-30 default, needs-decision:
-      placeholder, not decided).
+      Payload of release.requested. `requested_by` is who requested the release, as sent in the request body
+      (user decision, Q-30, #87: a free string like `decided_by`).
     type: object
     additionalProperties: false
-    required: [release_id, artifact, requested_at]
+    required: [release_id, artifact, requested_by, requested_at]
     properties:
       release_id:
         $ref: "#/$defs/ReleaseId"
       artifact:
         $ref: "#/$defs/ArtifactRef"
+      requested_by:
+        $ref: "#/$defs/Actor"
       requested_at:
         $ref: "#/$defs/Timestamp"
     examples:
@@ -359,6 +361,7 @@ $defs:
         artifact:
           name: shipyard-api
           version: 3
+        requested_by: sam
         requested_at: "2026-11-25T10:10:00Z"
 
   ReleaseDecidedData:
@@ -395,10 +398,10 @@ $defs:
     examples: [0b7f3a52-9c1d-4e8a-8f43-2d6c1b9e7a01]
 
   BuildId:
-    x-assumed: [Q-15, Q-28]
+    x-assumed: [Q-15]
     description: >
-      ID of one pipeline run (a run is a build; Q-28 default), a UUID string assigned by pipeline-runner
-      (Q-15 default). The same name, `build_id`, is used in every file.
+      ID of one pipeline run (one run is one build; user decision, Q-28, #85), a UUID string assigned by
+      pipeline-runner (Q-15 default). The same name, `build_id`, is used in every file.
     type: string
     format: uuid
     examples: [5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701]
@@ -419,7 +422,12 @@ $defs:
     examples: ["2026-11-25T10:00:00Z"]
 
   PipelineName:
-    description: The `name` of the pipeline definition the run was started with (user decision, Q-19, #34).
+    description: >
+      The `name` of the pipeline definition the run was started with (user decision, Q-19, #34). A passed
+      build uploads one fake artifact named after the pipeline (user decision, Q-34, #110), so this name is
+      also used as an ArtifactName. This schema is not restricted to the ArtifactName rule: what happens for a
+      pipeline name that is not a valid ArtifactName (for example one with a space or `/`, or longer than 100
+      characters) is not settled and has been raised with the lead (T017 hand-off).
     type: string
     minLength: 1
     examples: [shipyard-api]
@@ -562,11 +570,21 @@ $defs:
 
   ArtifactName:
     description: >
-      Artifact name as chosen by the uploader; used as a path segment in artifact-store. Allowed characters are
-      not settled (Q-29).
+      Artifact name as chosen by the uploader; used as the `{name}` path segment in artifact-store (user
+      decision, Q-29, #86): letters, digits, `.`, `-` and `_`; the first character is a letter or digit; 1 to
+      100 characters; case-sensitive (`App` and `app` are two artifacts). No `/` and no spaces, so every valid
+      name is one path segment (closes the gap of issue #103). Must be rejected, for example: `a/b` (slash),
+      `my app` (space), the empty string, `-app` and `.app` (first character), and any name of 101 characters.
     type: string
     minLength: 1
-    examples: [shipyard-api]
+    maxLength: 100
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+    not:
+      description: >
+        No line break anywhere. Needed because in Python's `re` (used by jsonschema) `$` also matches before
+        a final newline, so the pattern alone would accept `app` followed by a newline.
+      pattern: "\n"
+    examples: [shipyard-api, Web_2.1, a, "0"]
 
   ArtifactVersion:
     description: Integer version assigned by artifact-store per artifact name, starting at 1 (user decision, Q-17, #33).
@@ -636,9 +654,9 @@ $defs:
 
   Actor:
     description: >
-      Who made a decision, as a free string sent by the caller. There is no authentication in waves 1-2 (user
-      decision, Q-09, #29), so release-service records the value as sent and does not verify it (user decision,
-      Q-10, #30).
+      Who made a decision (`decided_by`) or requested a release (`requested_by`, user decision, Q-30, #87), as a
+      free non-empty string sent by the caller. There is no authentication in waves 1-2 (user decision, Q-09,
+      #29), so release-service records the value as sent and does not verify it (user decision, Q-10, #30).
     type: string
     minLength: 1
     examples: [dana]

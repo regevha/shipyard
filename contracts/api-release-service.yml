@@ -14,23 +14,30 @@ info:
 
 
     Rules (user decisions, Q-10, #30 and Q-16, #32): a release references one artifact
-    by name + version; the decision body carries `decided_by` (free string) and the server sets `decided_at`;
+    by name + version; the request body carries `requested_by` (free string, user decision, Q-30, #87) and the
+    server sets `requested_at`; the decision body carries `decided_by` (free string) and the server sets `decided_at`;
     one decision per release, and it is final (a second decision is 409 release_already_decided); a rejected
     release stays rejected and a new release is requested instead; there is no self-approval rule; promotion is
     a recorded state change only (`promoted_at`) and is 409 release_not_approved unless the release is approved;
-    any client may call promote. Not settled: who calls the decision endpoint, and whether the dashboard pages
-    may call these endpoints from the browser (Q-32); what a second promote of an already promoted release
-    returns (Q-31).
+    any client may call promote. Promoting an already promoted release is 200 with the release unchanged, and
+    `promoted_at` keeps the time of the first promote (user decision, Q-31, #88).
+
+
+    Who calls decide and promote (user decision, Q-32, #89): in wave 2 a person calls them directly on
+    release-service, with curl or a script. The dashboard pages have no approve, reject or promote buttons and
+    never call this service (the dashboard stays read-only); to be revisited in wave 3.
 
 
     Authentication: none in waves 1-2 (trusted local network), revisited in wave 3 (user decision, Q-09, #29),
-    so `decided_by` is whatever the caller sends. There is no security scheme.
+    so `requested_by` and `decided_by` are whatever the caller sends. There is no security scheme.
 paths:
   /releases:
     post:
       operationId: requestRelease
       summary: Request a release of one artifact version
-      description: Creates a release with status `pending` and answers 201.
+      description: >
+        Creates a release with status `pending`, records `requested_by` as sent and sets `requested_at`, and
+        answers 201.
       requestBody:
         required: true
         content:
@@ -43,6 +50,7 @@ paths:
                   artifact:
                     name: shipyard-api
                     version: 3
+                  requested_by: sam
       responses:
         "201":
           description: The new release.
@@ -58,6 +66,7 @@ paths:
                       name: shipyard-api
                       version: 3
                     status: pending
+                    requested_by: sam
                     requested_at: "2026-11-25T10:10:00Z"
                     decided_by: null
                     decided_at: null
@@ -87,6 +96,7 @@ paths:
                       name: shipyard-api
                       version: 3
                     status: approved
+                    requested_by: sam
                     requested_at: "2026-11-25T10:10:00Z"
                     decided_by: dana
                     decided_at: "2026-11-25T10:20:00Z"
@@ -102,7 +112,8 @@ paths:
       operationId: decideRelease
       summary: Record the approve or reject decision
       description: >
-        Records the decision, who made it (`decided_by`, as sent) and when (`decided_at`, set by the server), and
+        Called by a person with curl or a script, never by the dashboard (user decision, Q-32, #89). Records the
+        decision, who made it (`decided_by`, as sent) and when (`decided_at`, set by the server), and
         answers 200 with the updated release. Error precedence: 422 for a malformed path parameter, then 404,
         then 422 for the body, then 409 release_already_decided.
       parameters:
@@ -137,6 +148,7 @@ paths:
                       name: shipyard-api
                       version: 3
                     status: approved
+                    requested_by: sam
                     requested_at: "2026-11-25T10:10:00Z"
                     decided_by: dana
                     decided_at: "2026-11-25T10:20:00Z"
@@ -165,14 +177,18 @@ paths:
       summary: Promote an approved release
       description: >
         Records `promoted_at` and answers 200 with the release; no request body. 409 release_not_approved unless
-        the release status is `approved` (user decision, Q-16, #32). What a second promote of a release that already has
-        `promoted_at` returns is not settled (Q-31). No event is sent for a promotion (user decision, Q-14, #31). Error
+        the release status is `approved` (user decision, Q-16, #32). Promoting a release that already has
+        `promoted_at` is 200 with the release unchanged: `promoted_at` keeps the time of the first promote and
+        nothing else changes (user decision, Q-31, #88). No event is sent for a promotion (user decision, Q-14,
+        #31). Called by a person with curl or a script, never by the dashboard (user decision, Q-32, #89). Error
         precedence: 422 for a malformed path parameter, then 404, then 409.
       parameters:
         - $ref: "#/components/parameters/ReleaseId"
       responses:
         "200":
-          description: The promoted release.
+          description: >
+            The promoted release. For a release that was already promoted, the same release unchanged, with the
+            first `promoted_at` (user decision, Q-31, #88).
           content:
             application/json:
               schema:
@@ -185,6 +201,20 @@ paths:
                       name: shipyard-api
                       version: 3
                     status: approved
+                    requested_by: sam
+                    requested_at: "2026-11-25T10:10:00Z"
+                    decided_by: dana
+                    decided_at: "2026-11-25T10:20:00Z"
+                    promoted_at: "2026-11-25T10:30:00Z"
+                already-promoted:
+                  summary: A second promote (for example at 10:45) returns the release unchanged
+                  value:
+                    release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+                    artifact:
+                      name: shipyard-api
+                      version: 3
+                    status: approved
+                    requested_by: sam
                     requested_at: "2026-11-25T10:10:00Z"
                     decided_by: dana
                     decided_at: "2026-11-25T10:20:00Z"
@@ -220,20 +250,23 @@ components:
 
   schemas:
     ReleaseRequest:
-      x-assumed: [Q-30]
       description: >
-        Body of a release request: the one artifact version to release (user decision, Q-16, #32). Who requests is not
-        recorded (Q-30 default, needs-decision: placeholder, not decided).
+        Body of a release request: the one artifact version to release (user decision, Q-16, #32) and who
+        requests it, a free non-empty string like `decided_by` (user decision, Q-30, #87). `requested_at` is set
+        by the server, never sent.
       type: object
       additionalProperties: false
-      required: [artifact]
+      required: [artifact, requested_by]
       properties:
         artifact:
           $ref: "events.yml#/$defs/ArtifactRef"
+        requested_by:
+          $ref: "events.yml#/$defs/Actor"
       examples:
         - artifact:
             name: shipyard-api
             version: 3
+          requested_by: sam
 
     DecisionRequest:
       description: Body of a decision (user decision, Q-10, #30). `decided_at` is set by the server, never sent.
@@ -260,16 +293,16 @@ components:
       examples: [pending, approved]
 
     Release:
-      x-assumed: [Q-30]
       description: >
         One release. Fields not known yet are present and null. The anyOf is the state table the schema
         enforces: pending means `decided_by`, `decided_at` and `promoted_at` are null; approved means
         `decided_by` and `decided_at` are set and `promoted_at` is null until promoted; rejected means
         `decided_by` and `decided_at` are set and `promoted_at` is null (only an approved release can be
-        promoted, user decision, Q-16, #32). There is no requester field (Q-30 default).
+        promoted, user decision, Q-16, #32). `requested_by` and `requested_at` are known from the request, so they
+        are never null (user decision, Q-30, #87). A second promote leaves the release unchanged (Q-31, #88).
       type: object
       additionalProperties: false
-      required: [release_id, artifact, status, requested_at, decided_by, decided_at, promoted_at]
+      required: [release_id, artifact, status, requested_by, requested_at, decided_by, decided_at, promoted_at]
       properties:
         release_id:
           $ref: "events.yml#/$defs/ReleaseId"
@@ -277,6 +310,8 @@ components:
           $ref: "events.yml#/$defs/ArtifactRef"
         status:
           $ref: "#/components/schemas/ReleaseStatus"
+        requested_by:
+          $ref: "events.yml#/$defs/Actor"
         requested_at:
           $ref: "events.yml#/$defs/Timestamp"
         decided_by:
@@ -323,10 +358,21 @@ components:
             name: shipyard-api
             version: 3
           status: pending
+          requested_by: sam
           requested_at: "2026-11-25T10:10:00Z"
           decided_by: null
           decided_at: null
           promoted_at: null
+        - release_id: 7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c07
+          artifact:
+            name: shipyard-api
+            version: 3
+          status: approved
+          requested_by: sam
+          requested_at: "2026-11-25T10:10:00Z"
+          decided_by: dana
+          decided_at: "2026-11-25T10:20:00Z"
+          promoted_at: "2026-11-25T10:30:00Z"
 
   responses:
     NotFound:
