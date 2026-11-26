@@ -39,20 +39,39 @@ merges first, because `scripts/ci/check_task_scope.py` reads `docs/tasks/<ID>.ym
 (CI); then T012 (contracts), which must pass T011's checker. T011 and T012 have disjoint `files_touched`, but T012
 depends on T011, so they run one after the other.
 
-**Wave 2: the thinnest slice through all four services, built against the contracts (outline only, no specs yet;
-the wave 2/3 split was the lead's outline and the user confirmed it on 2026-11-26, Q-27).** Starts with the setup
-task T019, which proposes the decisions listed as "wave 0" in `docs/team/environment.md` (Q-03); the user approves
-the proposal before any service task starts. The database is SQLite for every service for now, with data access
-easy to swap (user decision on #25, 2026-11-26, quoted in Q-03). Rough task list, at most 3 build agents at a time, so it will likely split
-into 2a and 2b:
-- Setup (devops): per-service `pyproject.toml` and lockfile, port base and slot numbering, local start command,
-  CI jobs per service, `environment.md` update (Q-01, Q-02, Q-03).
-- Per service (backend-dev): `dashboard` events intake + read API; `pipeline-runner`; `artifact-store`;
-  `release-service`. Each with its own tests and a conformance test against its `contracts/api-<service>.yml`
-  (how FastAPI's generated OpenAPI is compared: Q-22).
-- Dashboard UI (frontend-dev): static HTML + JS pages served by the dashboard (folder: Q-02).
-- Stack-level HTTP test (tester): start all four, run a pipeline, upload, request, approve, promote, check the
-  dashboard read API.
+**Wave 2: the thinnest slice through all four services, built against the contracts (Q-27, confirmed by the user on
+2026-11-26).** The setup is the one in `docs/team/environment.md` § "Wave 2 setup (T019, approved)", approved by
+Nir on #25 on 2026-11-26. SQLite for every service, data access behind `app/repos/` so it is easy to swap (user
+decision on #25, quoted in Q-03); no migrations in wave 2. The contract changes of T020 (#121; #136 needs none)
+are the last before the build: `contracts/**` is frozen from the start of T021 until the end of wave 2, except
+for a Blocking defect through the lead. At most 3 build agents at a time; tasks of one sub-wave have disjoint
+`files_touched` (checked in `docs/tasks/T020.yml`). Four sub-waves, each starting when the previous one is merged:
+
+- **2a, foundation (one agent at a time): T021, then T022.** T021 (devops) scaffolds the four service projects
+  and `stack-tests/` (pyproject, `uv.lock`, `.python-version`), the root `.gitignore` (#8), `scripts/dev/*.sh`
+  (with the #136 stop-or-refuse fix), `scripts/ci/check_shared_copy.py` and the CI matrix. To keep CI green
+  before any service logic exists, each service gets a minimal `app/main.py` (an empty FastAPI app) and
+  `tests/test_main.py`, and the dashboard a placeholder `static/index.html`. T022 (backend-dev) then writes
+  `shared/errors.py` and `shared/openapi_conformance.py` with their tests and copies all four files into every
+  service. T022 runs after T021 because its copied tests run in the service projects T021 creates; it never
+  touches `app/main.py`.
+- **2b, three services (3 agents): T023 dashboard backend, T024 pipeline-runner, T025 artifact-store.** From
+  here each service task owns its service's `app/main.py`, `tests/test_main.py`, `pyproject.toml` and
+  `uv.lock`; the copies from T022 stay untouched. The dashboard goes first because the UI builds on it.
+- **2c (2 agents): T026 release-service, T027 dashboard UI (frontend-dev, `services/dashboard/static/`).**
+  release-service calls no service but the dashboard, so it can wait; T027 needs T023's read API for its browser
+  smoke test against the real backend.
+- **2d (1 agent): T028 (tester).** `stack-tests/` starts all four with `scripts/dev/start-stack.sh`, runs a
+  pipeline, uploads, requests, approves, promotes and checks the dashboard read API; adds the CI `stack` job;
+  writes `docs/DEMO.md`. It runs last because it tests every other task's code.
+
+The user decisions each task must follow are written into its spec with their Q-numbers: Q-28 (`build_id`,
+`/runs/{build_id}`), Q-29 and #119 (name rule, 422 for a bad pipeline name), Q-30 (`requested_by`), Q-31
+(idempotent promote), Q-32 (no dashboard buttons), Q-33 (a command of exactly `fail` fails), Q-34 (one fake
+artifact per passed build, named after the pipeline), Q-36 and #120 (upload after the last step, failure reason
+`artifact upload failed`, no retries). #132: T024 picks the upload timeout and records it in its hand-off. #131 is
+still open for Nir; the specs assume option (a) (a failed build can show an artifact) and mark it `assumed (#131)`;
+under option (c) T023 and T027 would change (filter or hide artifacts of failed builds).
 
 **Wave 3: hardening (outline only; confirmed by the user, Q-27).** Replace the HTTP event calls with a real queue (the
 contracts keep the event
@@ -212,7 +231,23 @@ equal to the file name without `.yml`.
   by the lead). Task branches may only change their own `files_touched`, so status updates to this table are made
   by the lead on a housekeeping branch (`spec-T<nn>-...`).
 - CI: third-party GitHub Actions pinned by commit SHA; pip packages pinned to exact versions.
-- Contracts are frozen once T012 merges; changes go through the lead (table below).
+- Contracts are frozen once T012 merges; changes go through the lead (table below). The T020 changes are the
+  last between waves 1 and 2; from the start of T021 to the end of wave 2 only a Blocking defect changes them.
+- Wave 2 setup (ports, env vars, data dir, scripts, `pyproject.toml` tables, CI) is `docs/team/environment.md`
+  § "Wave 2 setup (T019, approved)"; task specs do not restate it.
+- Write endpoints commit the database transaction before they send the response; events are sent only after the
+  commit, from a background task, so a slow or down dashboard never delays or changes a response or an outcome
+  (Q-11 default).
+- Event senders (pipeline-runner, artifact-store, release-service) behave the same: a new `event_id` (UUID) per
+  event, reused on every retry; up to 3 attempts with 2 s timeout each, waiting 0.5 s and then 1 s; retry only on
+  a network error, a timeout or a 5xx; then log and drop. Sending never raises into the caller.
+- Error precedence is the one in each operation's description; where none is stated: 422 for a malformed path or
+  query parameter, then 404, then 422 for the body, then 409.
+- No new package in wave 2 unless the task's spec lists its `pyproject.toml` and `uv.lock` and the reviewer
+  agrees; tests fake other services with `httpx.MockTransport` (part of httpx), not a new mocking library.
+- Every service task proves its decisions with the named tests in its spec (pytest node IDs, so a missing test
+  fails the acceptance command), validates real responses against the contract schemas in its tests, and keeps
+  coverage at or above `fail_under` (proposed by T021, confirmed by the lead).
 
 ## Tasks
 
@@ -228,11 +263,22 @@ Owner, branch, dependencies and `read_first` are in each `docs/tasks/Tnn.yml`.
 | T015 ([PR #80](https://github.com/regevha/shipyard/pull/80)) | Correct Q-06 (ruleset Main1); T011, T013, T014 done | `python3 -I scripts/team/check_brief_quotes.py` exits 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md` | done (PR #80, 7d8362c) |
 | T016 ([PR #114](https://github.com/regevha/shipyard/pull/114)) | Wave 1 close-out: T012 done, Q-34, stale wording (#113, #81, #82, #83) | `python3 -I scripts/team/check_brief_quotes.py` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md` | done (PR #114, 218c401) |
 | [T017](tasks/T017.yml) ([#116](https://github.com/regevha/shipyard/issues/116)) | Contracts apply the user's decisions of 2026-11-26 (Q-23, Q-28..Q-35, Q-36; #112) | `python3 scripts/ci/check_contracts.py` and `--self-test` exit 0; the `x-assumed` grep in `T017.yml` exits 0; full reviewer finds no cross-file disagreement (review gate, not a command) | the six `contracts/*.yml` | done (PR #123, d3f0b12; full reviewer APPROVE after 1 fix round in each of its two review rounds (the second for #119 and #120)) |
-| T018 ([#117](https://github.com/regevha/shipyard/issues/117)) | Record the user's decisions of 2026-11-26 in `docs/OPEN_QUESTIONS.md` (Q-03..Q-06, Q-24, Q-25, Q-27..Q-36; Q-23 resolved by T017), the Q-05 rule in `docs/team/shipyard-overrides.md`, this table | `python3 -I scripts/team/check_brief_quotes.py` and `--self-test` exit 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md`, `docs/team/shipyard-overrides.md`, `scripts/team/check_brief_quotes.py` (one `OTHER_SOURCES` line) | in-review |
-| [T019](tasks/T019.yml) ([#25](https://github.com/regevha/shipyard/issues/25)) | Wave 2 setup proposal (Q-03): SQLite and migration tool, start command, ports and slots, script names, per-service `pyproject.toml`, in `docs/team/environment.md`; the user approves before any service task | the commands in `T019.yml` (spec merged in PR #134); reviewer APPROVE and the user's approval on #25 (review gates) | `docs/team/environment.md` | todo (devops; not started) |
+| T018 ([#117](https://github.com/regevha/shipyard/issues/117)) | Record the user's decisions of 2026-11-26 in `docs/OPEN_QUESTIONS.md` (Q-03..Q-06, Q-24, Q-25, Q-27..Q-36; Q-23 resolved by T017), the Q-05 rule in `docs/team/shipyard-overrides.md`, this table | `python3 -I scripts/team/check_brief_quotes.py` and `--self-test` exit 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md`, `docs/team/shipyard-overrides.md`, `scripts/team/check_brief_quotes.py` (one `OTHER_SOURCES` line) | done (PR #133) |
+| [T019](tasks/T019.yml) ([#25](https://github.com/regevha/shipyard/issues/25)) | Wave 2 setup proposal (Q-03): SQLite and migration tool, start command, ports and slots, script names, per-service `pyproject.toml`, in `docs/team/environment.md`; the user approves before any service task | the commands in `T019.yml` (spec merged in PR #134); reviewer APPROVE and the user's approval on #25 (review gates) | `docs/team/environment.md` | done (PR #135, 357eb3f; approved by Nir on #25) |
+| [T020](tasks/T020.yml) | Wave 2 plan and task specs T021-T028; environment.md marked approved (#36, #136); contract changes #121 (newline guard) and #136 (no contract change) | the commands in `T020.yml`: every spec parses, sub-wave `files_touched` disjoint, `read_first` targets exist, every contract `pattern` guarded, `check_contracts.py` and `--self-test` exit 0, `check_brief_quotes.py` exits 0; reviewer APPROVE (review gate) | `contracts/events.yml`, `docs/PLAN.md`, `docs/team/environment.md`, `docs/tasks/T020.yml`..`T028.yml`, `docs/tasks/T020.md` | in-review |
+| [T021](tasks/T021.yml) | 2a. Scaffold (devops): `.gitignore` (#8), four service projects + `stack-tests/` (pyproject, `uv.lock`, `.python-version`), minimal `app/main.py` + `tests/test_main.py`, dashboard placeholder `static/index.html`, `scripts/dev/*.sh` (#136), `check_shared_copy.py`, CI matrix + shared-copy job in `ci-ok`; proposes `fail_under` | the commands in `T021.yml` (per-service uv/ruff/mypy/pytest, stack start/stop in a spare slot incl. the #136 refuse case, `check_shared_copy.py --self-test`, `ci-ok` success); lead confirms `fail_under` (review gate) | see `T021.yml` | todo |
+| [T022](tasks/T022.yml) | 2a. Shared modules (backend-dev): `shared/errors.py` (Q-21, #136 mapping), `shared/openapi_conformance.py` (Q-22), their tests, verbatim copies in all four services | named pytest node IDs in every service; `check_shared_copy.py` exits 0 with no file pending | `shared/**`, `services/*/app/errors.py`, `services/*/tests/openapi_conformance.py`, `services/*/tests/test_shared_*.py` | todo |
+| [T023](tasks/T023.yml) | 2b. dashboard backend (backend-dev): `POST /events` intake, `GET /builds`, `/artifacts`, `/releases`, static mount; read-only (Q-23, Q-32); `assumed (#131)` | named pytest node IDs, conformance test, coverage; `DATA_MODEL.md`, hand-off | `services/dashboard/` except `static/` and the T022 copies | todo |
+| [T024](tasks/T024.yml) | 2b. pipeline-runner (backend-dev): `POST /runs`, `GET /runs/{build_id}` (Q-28), simulated steps (Q-33), one fake upload (Q-34, Q-36/#120), name rule (#119), events; upload timeout (#132) | named pytest node IDs, conformance test, coverage; timeout in hand-off | `services/pipeline-runner/` except the T022 copies | todo |
+| [T025](tasks/T025.yml) | 2b. artifact-store (backend-dev): upload with version and SHA-256 (Q-17), checksum header, 413, name rule (Q-29), download, blobs under the data dir, `artifact.uploaded` | named pytest node IDs, conformance test, coverage | `services/artifact-store/` except the T022 copies | todo |
+| [T026](tasks/T026.yml) | 2c. release-service (backend-dev): request with `requested_by` (Q-30), final decision (Q-10), promote only if approved (Q-16), idempotent promote (Q-31), events, no promotion event (Q-14) | named pytest node IDs, conformance test, coverage | `services/release-service/` except the T022 copies | todo |
+| [T027](tasks/T027.yml) | 2c. dashboard UI (frontend-dev): `services/dashboard/static/` builds, failures, artifacts, releases; auto-refresh; no buttons (Q-32); only the dashboard's own JSON (Q-23); `assumed (#131)` | the grep checks in `T027.yml`; browser smoke test against the real dashboard and ux-reviewer (review gates) | `services/dashboard/static/**` | todo |
+| [T028](tasks/T028.yml) | 2d. Stack tests and demo (tester): `stack-tests/` full flow, failed step, failed upload, bad name; CI `stack` job in `ci-ok`; `docs/DEMO.md` | `uv run pytest` in `stack-tests/`; the DEMO walkthrough block runs; `ci-ok` success | `stack-tests/**`, `.github/workflows/ci.yml`, `docs/DEMO.md` | todo |
 
 ## Contract change requests
 
 | Date | From | Change | Status |
 | --- | --- | --- | --- |
 | 2026-11-25 | reviewer (T012 verify, #112) | `contracts/api-pipeline-runner.yml` info: cite #110 / Q-34 in the sentence on which artifacts a run uploads (wording only) | applied in T017 (PR #123) |
+| 2026-11-26 | architect (T017 finding, #121) | `contracts/events.yml` `Checksum` and `Timestamp`: add `not: {pattern: "\n"}`, the guard T017 gave `ArtifactName` (Python `re` lets `$` match before a final newline); they were the only unguarded `pattern`s in the six files (`PipelineName` refers to `ArtifactName`) | applied in T020 |
+| 2026-11-26 | reviewer (T019 review, #136) | Error mapping in `shared/errors.py`: any framework 4xx without its own code answers 422 `validation_failed`, any 5xx answers 500 `internal_error`. Chosen over adding (status, `validation_failed`) pairs to `errors.yml` `x-status-codes`: no contract change, every status a service can emit stays listed in `x-status-codes`, and no operation would list the new statuses, so the conformance test (Q-22) needs nothing extra | decided in T020, no contract change; written into `docs/team/environment.md` (Error envelope row) and `T022.yml` |

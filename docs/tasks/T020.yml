@@ -1,0 +1,125 @@
+id: T020
+title: "Wave 2 plan and task specs T021-T028; environment.md marked approved; contract changes #121 and #136"
+owner: architect
+branch: spec-T020-wave2-plan
+mode: team
+ui: false
+wave: 2
+depends_on: [T019]
+migration: false
+read_first:
+  - .claude/agents/architect.md
+  - docs/team/environment.md
+  - docs/tasks/README.md
+  - docs/tasks/T019.yml
+  - docs/tasks/T019.md
+  - docs/tasks/T017.md
+  - docs/team/shipyard-overrides.md
+  - docs/PLAN.md#waves
+  - docs/PLAN.md#conventions
+  - docs/PLAN.md#tasks
+  - docs/PLAN.md#contract-change-requests
+  - contracts/errors.yml
+  - contracts/events.yml
+files_touched:
+  - contracts/events.yml
+  - docs/PLAN.md
+  - docs/team/environment.md
+  - docs/tasks/T020.yml
+  - docs/tasks/T021.yml
+  - docs/tasks/T022.yml
+  - docs/tasks/T023.yml
+  - docs/tasks/T024.yml
+  - docs/tasks/T025.yml
+  - docs/tasks/T026.yml
+  - docs/tasks/T027.yml
+  - docs/tasks/T028.yml
+acceptance:
+  - |-
+    python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('docs/tasks/*.yml')]; print('ok')"  # prints ok
+  - |-
+    python3 -c "
+    import yaml
+    req = {'id','title','owner','branch','mode','ui','wave','depends_on','migration','read_first','files_touched','acceptance','summary'}
+    for n in range(21, 29):
+        t = f'T0{n}'; d = yaml.safe_load(open(f'docs/tasks/{t}.yml'))
+        assert d['id'] == t and req <= set(d), (t, req - set(d))
+        assert 'issue' not in d, t
+        assert d['branch'].startswith(t + '-'), t
+        assert d['wave'] == 2 and d['migration'] is False, t
+        assert all(x.startswith('T') and int(x[1:]) < n for x in d['depends_on']), t
+    print('specs ok')"  # prints specs ok
+  - |-
+    python3 -B -c "
+    import itertools, re, sys, yaml
+    sys.path.insert(0, 'scripts/ci'); from check_task_scope import matches
+    names = ['pipeline-runner', 'artifact-store', 'release-service', 'dashboard', 'x']
+    def instances(p):
+        parts = re.split(r'(\*\*|\*)', p)
+        slots = [names if x == '*' else ['x/y', 'x'] if x == '**' else [x] for x in parts]
+        return {''.join(c) for c in itertools.product(*slots)}
+    def overlap(a, b): return any(matches(i, b) for i in instances(a)) or any(matches(i, a) for i in instances(b))
+    groups = {'2a': ['T021', 'T022'], '2b': ['T023', 'T024', 'T025'], '2c': ['T026', 'T027'], '2d': ['T028']}
+    ft = {t: yaml.safe_load(open(f'docs/tasks/{t}.yml'))['files_touched'] for g in groups.values() for t in g}
+    bad = [(t1, p1, t2, p2) for g in groups.values() for t1, t2 in itertools.combinations(g, 2)
+           for p1 in ft[t1] for p2 in ft[t2] if overlap(p1, p2)]
+    assert not bad, bad
+    assert all(len(g) <= 3 for g in groups.values())
+    assert overlap('services/*/app/main.py', 'services/dashboard/app/main.py') and overlap('services/dashboard/static/**', 'services/dashboard/static/index.html')
+    print('disjoint')"  # prints disjoint (2a's two tasks are disjoint too, though they run one after the other)
+  - |-
+    python3 -c "
+    import re, os, yaml
+    def slug(h): return re.sub(r'[^\w\- ]', '', h.strip().lower().replace('\`', '')).replace(' ', '-')
+    bad = []
+    for n in range(20, 29):
+        d = yaml.safe_load(open(f'docs/tasks/T0{n}.yml'))
+        for r in d['read_first']:
+            f, _, frag = r.partition('#')
+            m = re.fullmatch(r'docs/tasks/(T\d+)\.md', f)
+            if m and m.group(1) in d['depends_on']: continue
+            if not os.path.exists(f): bad.append(r); continue
+            if not frag: continue
+            if frag.startswith('/'):
+                node = yaml.safe_load(open(f))
+                try:
+                    for part in frag[1:].split('/'): node = node[part.replace('~1', '/').replace('~0', '~')]
+                except (KeyError, TypeError): bad.append(r)
+            elif frag not in {slug(l.lstrip('#')) for l in open(f) if l.startswith('#')}: bad.append(r)
+    assert not bad, bad
+    print('read_first ok')"  # prints read_first ok (hand-offs of dependencies are created later)
+  - |-
+    python3 -c "
+    import yaml, glob
+    bad = []
+    def walk(n, path):
+        if isinstance(n, dict):
+            if isinstance(n.get('pattern'), str) and path[-1:] != ('not',) and (n.get('not') or {}).get('pattern') != '\n':
+                bad.append('/'.join(path))
+            for k, v in n.items(): walk(v, path + (str(k),))
+        elif isinstance(n, list):
+            for i, v in enumerate(n): walk(v, path + (str(i),))
+    for f in sorted(glob.glob('contracts/*.yml')): walk(yaml.safe_load(open(f)), (f,))
+    assert not bad, bad
+    print('every pattern guarded')"  # prints every pattern guarded (#121)
+  - |-
+    python3 scripts/ci/check_contracts.py && python3 scripts/ci/check_contracts.py --self-test  # both exit 0 (with scripts/ci/requirements-contracts.txt installed)
+  - |-
+    python3 -I scripts/team/check_brief_quotes.py  # exits 0
+  - |-
+    grep -c '^## Wave 2 setup (T019, approved)$' docs/team/environment.md && grep -q '^Status: approved by Nir on #25, 2026-11-26' docs/team/environment.md && ! grep -nE 'proposal, T019|until (the user )?approve|once approved|still a proposal|docs/contracts/<service>' docs/team/environment.md  # prints 1, exits 0
+  - |-
+    grep -qF '18000 + 10 x slot + service index' docs/team/environment.md && grep -q 'refuses to start' docs/team/environment.md && grep -q 'any other 4xx is answered as 422' docs/team/environment.md  # exits 0 (#136 points written into the setup)
+  - |-
+    grep -qF '| [T019](tasks/T019.yml) ([#25](https://github.com/regevha/shipyard/issues/25)) |' docs/PLAN.md && grep -q 'done (PR #135, 357eb3f; approved by Nir on #25) |$' docs/PLAN.md && grep -q 'done (PR #133) |$' docs/PLAN.md && for t in 21 22 23 24 25 26 27 28; do grep -q "^| \[T0$t\](tasks/T0$t.yml) .* | todo |$" docs/PLAN.md || { echo "row T0$t"; exit 1; }; done  # exits 0
+  - |-
+    test -z "$(git diff --name-only origin/main...HEAD | grep -vxF -f <(python3 -c "import yaml; print('\n'.join(yaml.safe_load(open('docs/tasks/T020.yml'))['files_touched'] + ['docs/tasks/T020.md']))"))"  # exits 0: only the listed files changed
+  - "reviewer APPROVE: specs cover every user decision listed in docs/PLAN.md § Waves, file lists match the layout, acceptance commands runnable (review gate, not a command)"
+summary: >
+  Architect task between waves 1 and 2, after Nir approved the T019 setup on #25 (2026-11-26). Marks the setup
+  section of docs/team/environment.md approved and removes the remaining proposal wording (#36 included:
+  contracts are contracts/*.yml); writes the #136 points into it (start-stack.sh stops or refuses before wiping;
+  other 4xx answer 422 validation_failed, no contract change). Applies the #121 contract change (newline guard on
+  Checksum and Timestamp, the only unguarded patterns). Replaces the wave 2 outline in docs/PLAN.md with the real
+  plan (2a T021-T022, 2b T023-T025, 2c T026-T027, 2d T028), adds the task rows and wave 2 conventions, sets T018
+  and T019 done, records both contract change requests. Writes the specs T021-T028. No code.

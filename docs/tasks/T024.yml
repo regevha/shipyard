@@ -1,0 +1,84 @@
+id: T024
+title: "Wave 2b pipeline-runner: runs, simulated steps, one fake upload, build events"
+owner: backend-dev
+branch: T024-pipeline-runner
+mode: team
+ui: false
+wave: 2
+depends_on: [T021, T022]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/PLAN.md#conventions
+  - contracts/api-pipeline-runner.yml
+  - contracts/events.yml#/$defs/Envelope
+  - contracts/events.yml#/$defs/BuildStarted
+  - contracts/events.yml#/$defs/BuildFinished
+  - contracts/events.yml#/$defs/BuildFinishedData
+  - contracts/events.yml#/$defs/PipelineName
+  - contracts/events.yml#/$defs/FailureReason
+  - contracts/api-artifact-store.yml#/paths/~1artifacts~1{name}/post
+  - contracts/api-dashboard.yml#/paths/~1events/post
+  - docs/OPEN_QUESTIONS.md#q-28-run-or-build-one-name-for-one-concept
+  - docs/OPEN_QUESTIONS.md#q-33-how-a-simulated-step-comes-out-failed
+  - docs/OPEN_QUESTIONS.md#q-34-which-artifacts-a-simulated-run-uploads
+  - docs/OPEN_QUESTIONS.md#q-35-a-valid-pipeline-name-can-be-an-invalid-artifact-name
+  - docs/OPEN_QUESTIONS.md#q-36-when-the-fake-artifact-is-uploaded-and-a-failed-upload
+  - docs/tasks/T021.md
+  - docs/tasks/T022.md
+files_touched:
+  - services/pipeline-runner/app/main.py
+  - services/pipeline-runner/app/models.py
+  - services/pipeline-runner/app/routers/**
+  - services/pipeline-runner/app/repos/**
+  - services/pipeline-runner/app/core/**
+  - services/pipeline-runner/tests/conftest.py
+  - services/pipeline-runner/tests/test_main.py
+  - services/pipeline-runner/tests/test_runner_*.py
+  - services/pipeline-runner/tests/test_contract_conformance.py
+  - services/pipeline-runner/pyproject.toml
+  - services/pipeline-runner/uv.lock
+  - services/pipeline-runner/DATA_MODEL.md
+acceptance:
+  - |-
+    cd services/pipeline-runner && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing  # exits 0, coverage at or above fail_under
+  - |-
+    cd services/pipeline-runner && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
+  - |-
+    cd services/pipeline-runner && uv run pytest -q tests/test_runner_api.py::test_q28_start_run_is_202_with_build_id tests/test_runner_api.py::test_q28_get_run_by_build_id tests/test_runner_api.py::test_get_unknown_build_id_is_404 tests/test_runner_api.py::test_get_malformed_build_id_is_422 tests/test_runner_api.py::test_n119_bad_pipeline_name_is_422_and_no_run tests/test_runner_api.py::test_duplicate_step_names_are_422 tests/test_runner_api.py::test_empty_steps_are_422 tests/test_runner_api.py::test_every_response_validates_against_contract_schema  # exits 0
+  - |-
+    cd services/pipeline-runner && uv run pytest -q tests/test_runner_execution.py::test_q33_command_fail_fails_step_and_skips_the_rest tests/test_runner_execution.py::test_q33_only_exact_fail_fails tests/test_runner_execution.py::test_q34_passed_build_uploads_one_artifact_named_after_pipeline tests/test_runner_execution.py::test_q34_failed_step_uploads_nothing tests/test_runner_execution.py::test_q36_upload_happens_while_running_and_before_build_finished tests/test_runner_execution.py::test_q36_upload_non_201_fails_build_with_reason tests/test_runner_execution.py::test_q36_upload_timeout_fails_build_with_reason tests/test_runner_execution.py::test_q36_upload_network_error_fails_build_with_reason tests/test_runner_execution.py::test_q36_upload_attempted_exactly_once tests/test_runner_execution.py::test_build_started_and_build_finished_events_sent tests/test_runner_execution.py::test_event_delivery_failure_does_not_change_outcome  # exits 0
+  - |-
+    grep -qiE 'upload timeout.*[0-9]+ ?s' docs/tasks/T024.md  # exits 0 (#132: the chosen timeout is recorded)
+  - |-
+    test -s services/pipeline-runner/DATA_MODEL.md && python3 scripts/ci/check_shared_copy.py  # exits 0
+  - |-
+    python3 scripts/ci/check_task_scope.py T024-pipeline-runner origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Wave 2b, runs in parallel with T023 and T025. Implements contracts/api-pipeline-runner.yml exactly. One run is
+  one build (Q-28, #85): build_id everywhere, paths /runs and /runs/{build_id}. POST /runs validates the
+  definition {name, steps: [{name, command}]} (Q-19), answers 202 with the Run at once and runs the steps in the
+  background in order, stopping at the first failed step (Q-20 default). Pipeline names use the artifact-name
+  rule (#119, Q-35): a bad name (my pipeline, a/b, -x, .x, empty, 101 characters, a trailing newline) is 422
+  validation_failed and no run is created; no slugifying. Steps are simulated, commands never executed (Q-19):
+  a step whose command is exactly "fail" fails, anything else passes, string equality, so FAIL, " fail" and
+  "fail now" pass (Q-33, #107). build.started when the first step starts. When every step passed (Q-34, #110;
+  Q-36, #120): exactly one upload attempt, while the run is still running, of one fake artifact named after the
+  pipeline, POST {ARTIFACT_STORE_URL}/artifacts/{pipeline_name}?build_id=<build_id> with placeholder bytes (and
+  their SHA-256 in X-Checksum-SHA256); on 201 the run becomes passed, then build.finished (passed); on anything
+  else (non-201, network error, timeout) the run becomes failed with failed_step null and failure_reason
+  "artifact upload failed", then build.finished (failed); no retry. A build with a failed step uploads nothing
+  and sends build.finished at once. #132: you pick the upload timeout (an env var
+  PIPELINE_RUNNER_UPLOAD_TIMEOUT_SECONDS with a default you choose, e.g. 10) and record it in the hand-off as
+  "upload timeout: <n> s" with the reason. assumed (#131): option (a), nothing extra when a timeout leaves a
+  stored artifact; option (c) would not change this task. Simulated step duration: an env var
+  PIPELINE_RUNNER_STEP_SECONDS (default 0.5, tests set 0) so a running build is visible in the demo. Events
+  follow PLAN.md § Conventions (event sender, after commit, never changes the outcome); URLs from
+  ARTIFACT_STORE_URL and DASHBOARD_URL. Tests fake artifact-store and the dashboard with httpx.MockTransport
+  (record call order to prove upload-before-build.finished and exactly one attempt). app/main.py: install(app),
+  routers, create_all at startup (PIPELINE_RUNNER_DATABASE_URL). All SQL in app/repos/. Never edit the T022
+  copies. Write services/pipeline-runner/DATA_MODEL.md and the hand-off docs/tasks/T024.md (endpoints, env
+  vars, upload timeout, step duration).

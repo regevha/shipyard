@@ -1,0 +1,73 @@
+id: T026
+title: "Wave 2c release-service: request, final decision, promote only when approved, release events"
+owner: backend-dev
+branch: T026-release-service
+mode: team
+ui: false
+wave: 2
+depends_on: [T021, T022]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/PLAN.md#conventions
+  - contracts/api-release-service.yml
+  - contracts/events.yml#/$defs/Envelope
+  - contracts/events.yml#/$defs/ReleaseRequested
+  - contracts/events.yml#/$defs/ReleaseDecided
+  - contracts/events.yml#/$defs/ArtifactRef
+  - contracts/events.yml#/$defs/Actor
+  - contracts/api-dashboard.yml#/paths/~1events/post
+  - docs/OPEN_QUESTIONS.md#q-10-who-approves-and-how-who-is-known
+  - docs/OPEN_QUESTIONS.md#q-16-what-blocks-promotion-means-and-who-calls-promote
+  - docs/OPEN_QUESTIONS.md#q-30-who-requested-a-release
+  - docs/OPEN_QUESTIONS.md#q-31-promoting-twice-and-promotion-on-the-dashboard
+  - docs/OPEN_QUESTIONS.md#q-32-who-calls-decision-and-promote-and-from-where
+  - docs/tasks/T021.md
+  - docs/tasks/T022.md
+files_touched:
+  - services/release-service/app/main.py
+  - services/release-service/app/models.py
+  - services/release-service/app/routers/**
+  - services/release-service/app/repos/**
+  - services/release-service/app/core/**
+  - services/release-service/tests/conftest.py
+  - services/release-service/tests/test_main.py
+  - services/release-service/tests/test_release_*.py
+  - services/release-service/tests/test_contract_conformance.py
+  - services/release-service/pyproject.toml
+  - services/release-service/uv.lock
+  - services/release-service/DATA_MODEL.md
+acceptance:
+  - |-
+    cd services/release-service && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing  # exits 0, coverage at or above fail_under
+  - |-
+    cd services/release-service && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
+  - |-
+    cd services/release-service && uv run pytest -q tests/test_release_api.py::test_q30_request_is_201_pending_with_requested_by tests/test_release_api.py::test_q30_missing_or_empty_requested_by_is_422 tests/test_release_api.py::test_request_bad_artifact_name_is_422 tests/test_release_api.py::test_q10_approve_records_decided_by_and_decided_at tests/test_release_api.py::test_q10_reject_stays_rejected tests/test_release_api.py::test_q10_second_decision_is_409_release_already_decided tests/test_release_api.py::test_q16_promote_pending_is_409_release_not_approved tests/test_release_api.py::test_q16_promote_rejected_is_409_release_not_approved tests/test_release_api.py::test_q16_promote_approved_sets_promoted_at tests/test_release_api.py::test_q31_second_promote_is_200_unchanged tests/test_release_api.py::test_decide_error_precedence tests/test_release_api.py::test_promote_error_precedence tests/test_release_api.py::test_get_unknown_release_is_404 tests/test_release_api.py::test_every_response_validates_against_contract_schema  # exits 0
+  - |-
+    cd services/release-service && uv run pytest -q tests/test_release_events.py::test_release_requested_event_sent_after_commit tests/test_release_events.py::test_release_decided_event_sent_after_commit tests/test_release_events.py::test_q14_no_event_on_promote tests/test_release_events.py::test_q16_artifact_store_never_called tests/test_release_events.py::test_event_delivery_failure_does_not_change_release  # exits 0
+  - |-
+    test -s services/release-service/DATA_MODEL.md && test -s docs/tasks/T026.md && python3 scripts/ci/check_shared_copy.py  # exits 0
+  - |-
+    python3 scripts/ci/check_task_scope.py T026-release-service origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Wave 2c, runs in parallel with T027. Implements contracts/api-release-service.yml exactly. POST /releases
+  takes an artifact reference (name + version, Q-16) and requested_by, a required non-empty free string (Q-30,
+  #87); the server sets requested_at; 201 with status pending; release-service does not check that the artifact
+  exists (Q-16, #32) and never calls artifact-store. POST /releases/{release_id}/decision records approve or
+  reject with decided_by as sent and decided_at set by the server; one decision per release, final: a second is
+  409 release_already_decided; a rejected release stays rejected; no self-approval rule (Q-10, #30). POST
+  /releases/{release_id}/promote records promoted_at only when the release is approved, else 409
+  release_not_approved (Q-16, #32); promoting an already promoted release is 200 with the release unchanged,
+  promoted_at keeps the first time (Q-31, #88). Error precedence as the contract says: 422 for a malformed path
+  parameter, then 404, then 422 for the body (decision only), then 409. Decide and promote are called by any
+  client directly on release-service, never through the dashboard (Q-32, #89); nothing in this service assumes a
+  dashboard caller. Events per PLAN.md § Conventions: release.requested after a release is created,
+  release.decided after a decision, none for a promotion (Q-14, #31); DASHBOARD_URL. app/main.py: install(app),
+  routers, create_all at startup (RELEASE_SERVICE_DATABASE_URL). All SQL in app/repos/. Tests fake the dashboard
+  with httpx.MockTransport and fail on any other host. Never edit the T022 copies. Write
+  services/release-service/DATA_MODEL.md and the hand-off docs/tasks/T026.md (endpoints, curl examples for
+  request, approve, promote, used by T028 and docs/DEMO.md).
