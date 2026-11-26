@@ -50,7 +50,7 @@ acceptance:
         assert all(x.startswith('T') and int(x[1:]) < n for x in d['depends_on']), t
     print('specs ok')"  # prints specs ok
   - |-
-    python3 -c "
+    python3 -B -c "
     import itertools, re, sys, yaml
     sys.path.insert(0, 'scripts/ci'); from check_task_scope import matches
     names = ['pipeline-runner', 'artifact-store', 'release-service', 'dashboard', 'x']

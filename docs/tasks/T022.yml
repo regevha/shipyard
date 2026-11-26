@@ -14,7 +14,6 @@ read_first:
   - docs/OPEN_QUESTIONS.md#q-22-how-wave-2-diffs-fastapis-openapi-against-the-contracts
   - contracts/errors.yml
   - contracts/api-release-service.yml
-  - scripts/ci/check_shared_copy.py
   - docs/tasks/T021.md
 files_touched:
   - shared/errors.py
