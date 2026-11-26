@@ -24,9 +24,10 @@ th, td {
   text-align: left;
   vertical-align: top;
 }
-td:first-child { min-width: 12rem; overflow-wrap: anywhere; }
+td { max-width: 16rem; overflow-wrap: break-word; }
+td:first-child { min-width: 12rem; }
 th { white-space: nowrap; }
-td.mono { font-family: ui-monospace, monospace; font-size: .875rem; overflow-wrap: anywhere; }
+td.mono { font-family: ui-monospace, monospace; font-size: .875rem; overflow-wrap: anywhere; min-width: 10rem; }
 td.time { white-space: nowrap; }
 td.num { text-align: right; white-space: nowrap; }
 .status { font-weight: bold; white-space: nowrap; }
@@ -40,7 +41,6 @@ td.num { text-align: right; white-space: nowrap; }
   .status-running, .status-pending { color: #ffd27a; }
 }
 .steps { margin: 0; padding-left: 1.1rem; }
-.steps li { white-space: nowrap; }
 .dash { color: GrayText; }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
