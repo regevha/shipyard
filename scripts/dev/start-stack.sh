@@ -65,25 +65,29 @@ done
 rm -rf "$SHIPYARD_DATA_DIR"
 mkdir -p "$SHIPYARD_DATA_DIR"
 
-for service in "${SHIPYARD_SERVICES[@]}"; do
-  port="$(service_port "$service")"
-  (
-    cd "$root/services/$service"
-    # --locked: a start never rewrites uv.lock. The pid file holds the real server pid
-    # (the background process execs uvicorn itself, no uv wrapper), so SIGKILL frees the port.
-    uv sync --locked --quiet >"$SHIPYARD_DATA_DIR/$service.log" 2>&1
-    exec nohup .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port "$port" \
-      >>"$SHIPYARD_DATA_DIR/$service.log" 2>&1 &
-    echo $! >"$SHIPYARD_DATA_DIR/$service.pid"
-  )
-done
-
+# Every startup failure goes through fail(): message, log tail, stop what already started.
 fail() {
   echo "error: $1" >&2
   tail -n 20 "$SHIPYARD_DATA_DIR/$2.log" >&2 || true
   "$root/scripts/dev/stop-stack.sh" || true
   exit 1
 }
+
+for service in "${SHIPYARD_SERVICES[@]}"; do
+  port="$(service_port "$service")"
+  log="$SHIPYARD_DATA_DIR/$service.log"
+  # --locked: a start never rewrites uv.lock. Done in the foreground so a failure is reported.
+  (cd "$root/services/$service" && uv sync --locked --quiet) >"$log" 2>&1 \
+    || fail "uv sync --locked failed for $service (log tail below)" "$service"
+  (
+    cd "$root/services/$service"
+    # The pid file holds the real server pid (the background process execs uvicorn itself,
+    # no uv wrapper), so SIGKILL frees the port.
+    exec nohup .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port "$port" \
+      >>"$log" 2>&1 &
+    echo $! >"$SHIPYARD_DATA_DIR/$service.pid"
+  )
+done
 
 for service in "${SHIPYARD_SERVICES[@]}"; do
   port="$(service_port "$service")"
