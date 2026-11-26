@@ -1,0 +1,77 @@
+id: T023
+title: "Wave 2b dashboard backend: events intake, read API, static mount"
+owner: backend-dev
+branch: T023-dashboard-events-read-api
+mode: team
+ui: false
+wave: 2
+depends_on: [T021, T022]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/PLAN.md#conventions
+  - contracts/api-dashboard.yml
+  - contracts/events.yml
+  - contracts/errors.yml#/x-status-codes
+  - contracts/api-pipeline-runner.yml#/components/schemas/RunStatus
+  - docs/OPEN_QUESTIONS.md#q-23-dashboard-read-api
+  - docs/OPEN_QUESTIONS.md#q-32-who-calls-decision-and-promote-and-from-where
+  - docs/OPEN_QUESTIONS.md#q-36-when-the-fake-artifact-is-uploaded-and-a-failed-upload
+  - docs/tasks/T021.md
+  - docs/tasks/T022.md
+files_touched:
+  - services/dashboard/app/main.py
+  - services/dashboard/app/models.py
+  - services/dashboard/app/routers/**
+  - services/dashboard/app/repos/**
+  - services/dashboard/app/core/**
+  - services/dashboard/tests/conftest.py
+  - services/dashboard/tests/test_main.py
+  - services/dashboard/tests/test_dashboard_*.py
+  - services/dashboard/tests/test_contract_conformance.py
+  - services/dashboard/pyproject.toml
+  - services/dashboard/uv.lock
+  - services/dashboard/DATA_MODEL.md
+acceptance:
+  - |-
+    cd services/dashboard && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing  # exits 0, coverage at or above fail_under
+  - |-
+    cd services/dashboard && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
+  - |-
+    cd services/dashboard && uv run pytest -q tests/test_dashboard_events.py::test_valid_event_of_each_type_is_202 tests/test_dashboard_events.py::test_repeated_event_id_is_202_and_first_body_wins tests/test_dashboard_events.py::test_unknown_type_is_422 tests/test_dashboard_events.py::test_source_not_matching_type_is_422 tests/test_dashboard_events.py::test_unknown_field_is_422 tests/test_dashboard_events.py::test_invalid_json_is_422 tests/test_dashboard_events.py::test_event_timestamp_with_trailing_newline_is_422  # exits 0
+  - |-
+    cd services/dashboard && uv run pytest -q tests/test_dashboard_read_api.py::test_build_running_after_started_only tests/test_dashboard_read_api.py::test_build_finished_before_started_still_one_build tests/test_dashboard_read_api.py::test_build_failed_by_upload_shows_failure_reason tests/test_dashboard_read_api.py::test_builds_newest_first_by_latest_event tests/test_dashboard_read_api.py::test_builds_status_failed_filter tests/test_dashboard_read_api.py::test_artifacts_newest_first_by_uploaded_at tests/test_dashboard_read_api.py::test_artifact_of_failed_build_is_listed tests/test_dashboard_read_api.py::test_release_pending_shows_requested_by tests/test_dashboard_read_api.py::test_release_decided_before_requested_has_null_requested_by tests/test_dashboard_read_api.py::test_release_view_has_no_promotion_field tests/test_dashboard_read_api.py::test_limit_above_200_is_422 tests/test_dashboard_read_api.py::test_limit_and_offset_page tests/test_dashboard_read_api.py::test_every_response_validates_against_contract_schema  # exits 0
+  - |-
+    cd services/dashboard && uv run pytest -q tests/test_dashboard_static.py::test_index_served_at_root tests/test_dashboard_static.py::test_api_routes_win_over_static tests/test_dashboard_static.py::test_unknown_static_path_is_404_envelope tests/test_dashboard_static.py::test_only_write_endpoint_is_post_events  # exits 0 (Q-32: read-only)
+  - |-
+    test -s services/dashboard/DATA_MODEL.md && test -s docs/tasks/T023.md && python3 scripts/ci/check_shared_copy.py  # exits 0
+  - |-
+    python3 scripts/ci/check_task_scope.py T023-dashboard-events-read-api origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Wave 2b, runs in parallel with T024 and T025. Implements contracts/api-dashboard.yml exactly: POST /events
+  (body = any one valid event of contracts/events.yml; 202; 422 validation_failed for anything else, including
+  an unknown type, a source that does not match the type, an unknown field and a value with a trailing newline,
+  #121; a repeated event_id is 202 and the first accepted body wins, Q-11 default) and GET /builds (status
+  filter, status=failed is the failures view), GET /artifacts, GET /releases, each with limit (1-200, default 50)
+  and offset (default 0), newest first by the occurred_at of the latest event per item as the operation
+  descriptions say. Views follow the contract's rules: a field whose event has not arrived is present and null,
+  a list is []; events may arrive out of order (build.finished before build.started, release.decided before
+  release.requested, artifact.uploaded before build.finished, user decision #120). BuildView carries
+  failure_reason (artifact upload failed, #120) and ReleaseView requested_by (Q-30, null until
+  release.requested arrives). No promotion field (Q-14, Q-31). Read-only (Q-23, Q-32): no write endpoint besides
+  POST /events, no approve, reject or promote, the dashboard calls no other service. assumed (#131): option (a),
+  /artifacts lists every uploaded artifact, also one whose build failed; under option (c) this task's /artifacts
+  (and maybe api-dashboard.yml) would change. app/main.py: install(app) from app/errors.py (T022), the routers,
+  create_all at startup (app/repos/engine.py reads DASHBOARD_DATABASE_URL with the default under
+  SHIPYARD_DATA_DIR, environment.md SQLite file row), then StaticFiles(directory=<services/dashboard/static>,
+  html=True) mounted at / after the routers. Never edit static/ (frontend-dev, T027) or the T022 copies
+  (app/errors.py, tests/openapi_conformance.py, tests/test_shared_*.py). All SQL in app/repos/. Tests use an
+  in-memory SQLite URL with StaticPool; tests/test_contract_conformance.py asserts
+  differences(app.openapi(), contracts/api-dashboard.yml) == []; every response in the read-API tests is
+  validated with schema_validator against the contract schemas (BuildPage, ArtifactPage, ReleasePage, state
+  tables included). Write services/dashboard/DATA_MODEL.md (tables, keys, how views are derived from events)
+  and the hand-off docs/tasks/T023.md (endpoints, how T027 and T028 can seed events with curl, anything about
+  ordering).

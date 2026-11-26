@@ -1,0 +1,73 @@
+id: T028
+title: "Wave 2d stack tests through all four services, CI stack job, docs/DEMO.md"
+owner: tester
+branch: T028-stack-tests-demo
+mode: team
+ui: false
+wave: 2
+depends_on: [T021, T022, T023, T024, T025, T026, T027]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/PLAN.md#waves
+  - contracts/api-dashboard.yml
+  - contracts/api-pipeline-runner.yml#/paths
+  - contracts/api-artifact-store.yml#/paths
+  - contracts/api-release-service.yml#/paths
+  - .github/workflows/ci.yml
+  - docs/tasks/T021.md
+  - docs/tasks/T022.md
+  - docs/tasks/T023.md
+  - docs/tasks/T024.md
+  - docs/tasks/T025.md
+  - docs/tasks/T026.md
+  - docs/tasks/T027.md
+files_touched:
+  - stack-tests/**
+  - .github/workflows/ci.yml
+  - docs/DEMO.md
+acceptance:
+  - |-
+    cd stack-tests && export SHIPYARD_SLOT=98 && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -v  # exits 0 (the tests start and stop the stack in slot 98 themselves)
+  - |-
+    cd stack-tests && export SHIPYARD_SLOT=98 && uv run pytest -q tests/test_stack_flow.py::test_passed_build_upload_release_approve_promote tests/test_stack_flow.py::test_second_promote_is_200_unchanged tests/test_stack_flow.py::test_failed_step_uploads_nothing_and_shows_in_failures tests/test_stack_flow.py::test_bad_pipeline_name_is_422 tests/test_stack_flow.py::test_rejected_release_cannot_be_promoted tests/test_stack_flow.py::test_dashboard_serves_the_ui tests/test_stack_flow.py::test_every_response_validates_against_contract_schema tests/test_stack_upload_failure.py::test_upload_failure_fails_build_with_reason  # exits 0
+  - |-
+    python3 -c "import re,sys; t=open('docs/DEMO.md').read(); b=re.findall(r'^\`\`\`sh\n(.*?)^\`\`\`', t, re.S|re.M); assert len(b)==1, len(b); open('/tmp/t028-demo.sh','w').write(b[0])" && SHIPYARD_SLOT=98 bash -euo pipefail /tmp/t028-demo.sh && SHIPYARD_SLOT=98 scripts/dev/stop-stack.sh  # exits 0: the walkthrough's one sh block runs as written
+  - |-
+    for h in '## Run it' '## Walkthrough' '## Known limitations'; do grep -qxF "$h" docs/DEMO.md || { echo "missing: $h"; exit 1; }; done  # exits 0
+  - |-
+    python3 -c "import yaml; j=yaml.safe_load(open('.github/workflows/ci.yml'))['jobs']; assert 'stack' in j and 'stack' in j['ci-ok']['needs']; print('stack job ok')"  # prints stack job ok
+  - |-
+    rm -rf /tmp/shipyard/slot98 && ! ss -ltn | grep -E ':1898[0-3] '  # exits 0: slot cleaned up
+  - |-
+    python3 scripts/ci/check_task_scope.py T028-stack-tests-demo origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head (stack job included)
+  - "reviewer APPROVE; the lead runs the DEMO walkthrough once in slot 0 (review gates, not commands)"
+summary: >
+  Wave 2d, the last wave 2 task; runs alone after T021-T027 are merged, so wave 2 ends demo-ready. Stack-level
+  HTTP tests in stack-tests/tests/ (never e2e/): a session fixture in stack-tests/tests/conftest.py runs
+  scripts/dev/start-stack.sh for SHIPYARD_SLOT (required, never defaulted to 0 inside a worktree) and
+  stop-stack.sh at the end; URLs from scripts/dev/ports.sh. Flow (test_passed_build_upload_release_approve_promote):
+  POST /runs on pipeline-runner (name shipyard-api, steps that pass), poll GET /runs/{build_id} (Q-28) until
+  passed; GET the artifact shipyard-api version 1 from artifact-store and check the bytes against
+  X-Checksum-SHA256 (Q-34: one artifact named after the pipeline); POST /releases with requested_by (Q-30),
+  approve with decided_by, promote (200), promote again (200 unchanged, Q-31); the dashboard's GET /builds,
+  /artifacts and /releases show the build passed, the artifact, and the release approved with requested_by and
+  decided_by, without a promotion field (Q-14). Also: a step with command exactly "fail" fails the build,
+  nothing is uploaded and it shows under /builds?status=failed (Q-33, Q-34); a bad pipeline name is 422 (#119);
+  a rejected release is 409 on promote (Q-16); GET / on the dashboard is HTML (T027); every JSON response
+  validates against its contract schema (jsonschema, refs resolved from contracts/). In its own module, after
+  the main flow: stop artifact-store (its pid file), run a passing pipeline and expect failed with failed_step
+  null and failure_reason "artifact upload failed" (Q-36, #120, no retry). Add the CI job `stack` to
+  .github/workflows/ci.yml (same pinned checkout and setup-uv as T021's `service` job; uv sync --locked in
+  stack-tests; pytest), in ci-ok's needs; do not change the other jobs. Write docs/DEMO.md with exactly the
+  sections "## Run it" (one command: scripts/dev/start-stack.sh, then open the dashboard URL; stop-stack.sh),
+  "## Walkthrough" (about five minutes, one ```sh block runnable with bash -euo pipefail for a given
+  SHIPYARD_SLOT, using curl and python3 only: start the stack, run a passing and a failing pipeline, show the
+  artifact, request, approve and promote a release, read the dashboard API, with what to look at in the browser
+  between steps), and "## Known limitations" (no auth between services, Q-09; SQLite data is throw-away and
+  wiped on start; steps are simulated, Q-19, Q-33; one fake artifact per passed build, Q-34; no retries of the
+  upload, Q-36; events are plain HTTP, no queue, Q-27; no buttons and no promotion on the dashboard, Q-32, Q-14;
+  a failed build can still show an artifact, #131, assumed option (a)). If a stack test finds a defect in a
+  service, report it to the lead with the failing test; never fix service code here. Hand-off docs/tasks/T028.md.

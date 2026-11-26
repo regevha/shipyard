@@ -1,0 +1,58 @@
+id: T027
+title: "Wave 2c dashboard UI: static pages for builds, failures, artifacts and releases"
+owner: frontend-dev
+branch: T027-dashboard-ui
+mode: team
+ui: true
+wave: 2
+depends_on: [T021, T023]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - contracts/api-dashboard.yml#/paths/~1builds/get
+  - contracts/api-dashboard.yml#/paths/~1artifacts/get
+  - contracts/api-dashboard.yml#/paths/~1releases/get
+  - contracts/api-dashboard.yml#/components/schemas/BuildView
+  - contracts/api-dashboard.yml#/components/schemas/ReleaseView
+  - contracts/events.yml#/$defs/Artifact
+  - docs/OPEN_QUESTIONS.md#q-02-dashboard-frontend-shape
+  - docs/OPEN_QUESTIONS.md#q-23-dashboard-read-api
+  - docs/OPEN_QUESTIONS.md#q-32-who-calls-decision-and-promote-and-from-where
+  - docs/team/lessons.md
+  - docs/tasks/T021.md
+  - docs/tasks/T023.md
+files_touched:
+  - services/dashboard/static/**
+acceptance:
+  - |-
+    test -s services/dashboard/static/index.html && test -s services/dashboard/static/app.js && test -s services/dashboard/static/style.css  # exits 0
+  - |-
+    ! grep -rnE 'https?://|//cdn|import .* from' services/dashboard/static/  # exits 0: no external host, no CDN, no module build (Q-02, Q-23)
+  - |-
+    ! grep -rnoE "fetch\(['\"\`][^'\"\`]*" services/dashboard/static/app.js | grep -vE "fetch\(['\"\`]/(builds|artifacts|releases)"  # exits 0: fetches only the dashboard's own read endpoints (Q-23)
+  - |-
+    ! grep -rniE '<button|<form|createElement\(.button|method: *.(POST|PUT|PATCH|DELETE)' services/dashboard/static/  # exits 0: no approve, reject or promote buttons, no writes (Q-32)
+  - |-
+    ! grep -nE 'innerHTML|outerHTML|insertAdjacentHTML|document\.write' services/dashboard/static/app.js  # exits 0: event data is shown with textContent only (anyone can post events, Q-09)
+  - |-
+    cd services/dashboard && uv run pytest -q tests/test_dashboard_static.py  # exits 0 (T023's static tests still pass with the real pages)
+  - |-
+    git diff --name-only origin/main...HEAD | grep -vE '^(services/dashboard/static/|docs/tasks/T027\.md$)'; test $? -eq 1  # exits 0: nothing outside static/ and the hand-off
+  - |-
+    python3 scripts/ci/check_task_scope.py T027-dashboard-ui origin/main  # exits 0
+  - "browser smoke test (Playwright with system Chrome) against the real dashboard from T023 in the agent's slot, seeded with events by curl: the four views render, status=failed shows only failed builds with the failed step or 'artifact upload failed', a build with null fields renders, the page refreshes without a reload, no console errors (review gate; unverified if no browser is available)"
+  - "ux-reviewer looked at the running page; reviewer APPROVE (review gates, not commands)"
+summary: >
+  Wave 2c, runs in parallel with T026. Replaces the T021 placeholder in services/dashboard/static/ with
+  index.html, app.js and style.css: plain HTML and a little JavaScript, no build step, no framework, no
+  external host or CDN (Q-02, brief). Served by the dashboard at / (T023's StaticFiles mount; never edit
+  services/dashboard/app/ or tests/). The page fetches only the dashboard's own JSON: GET /builds, GET
+  /builds?status=failed (failures view), GET /artifacts, GET /releases (Q-23), and refreshes every 5 seconds
+  without a page reload. Shows builds (pipeline name, build_id, status, started and finished times, steps,
+  the failed step or the failure_reason "artifact upload failed", #120), failures, artifacts (name, version,
+  checksum, size, build_id, uploaded_at) and releases (artifact, status pending/approved/rejected, requested_by,
+  decided_by, times; Q-30). Fields that are null (event not arrived yet) show as a dash. No approve, reject or
+  promote buttons and no write request (Q-32, #89); no promotion shown (Q-14, Q-31). assumed (#131): option
+  (a), an artifact whose build failed is listed like any other; under option (c) this task would hide it.
+  Render all event data with textContent (anyone can post events, Q-09). Hand-off docs/tasks/T027.md: the views,
+  the refresh interval, how to run the smoke test (slot, seed commands).

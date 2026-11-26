@@ -1,0 +1,73 @@
+id: T025
+title: "Wave 2b artifact-store: versioned uploads with SHA-256, download, artifact.uploaded event"
+owner: backend-dev
+branch: T025-artifact-store
+mode: team
+ui: false
+wave: 2
+depends_on: [T021, T022]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/PLAN.md#conventions
+  - contracts/api-artifact-store.yml
+  - contracts/events.yml#/$defs/Envelope
+  - contracts/events.yml#/$defs/ArtifactUploaded
+  - contracts/events.yml#/$defs/Artifact
+  - contracts/events.yml#/$defs/ArtifactName
+  - contracts/events.yml#/$defs/Checksum
+  - contracts/api-dashboard.yml#/paths/~1events/post
+  - docs/OPEN_QUESTIONS.md#q-17-artifact-version-and-checksum
+  - docs/OPEN_QUESTIONS.md#q-18-artifact-upload-format-and-limits
+  - docs/OPEN_QUESTIONS.md#q-29-allowed-characters-in-an-artifact-name
+  - docs/tasks/T021.md
+  - docs/tasks/T022.md
+files_touched:
+  - services/artifact-store/app/main.py
+  - services/artifact-store/app/models.py
+  - services/artifact-store/app/routers/**
+  - services/artifact-store/app/repos/**
+  - services/artifact-store/app/core/**
+  - services/artifact-store/tests/conftest.py
+  - services/artifact-store/tests/test_main.py
+  - services/artifact-store/tests/test_store_*.py
+  - services/artifact-store/tests/test_contract_conformance.py
+  - services/artifact-store/pyproject.toml
+  - services/artifact-store/uv.lock
+  - services/artifact-store/DATA_MODEL.md
+acceptance:
+  - |-
+    cd services/artifact-store && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing  # exits 0, coverage at or above fail_under
+  - |-
+    cd services/artifact-store && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
+  - |-
+    cd services/artifact-store && uv run pytest -q tests/test_store_api.py::test_q17_first_upload_is_version_1_then_2 tests/test_store_api.py::test_q17_checksum_is_sha256_of_bytes tests/test_store_api.py::test_q17_checksum_header_mismatch_is_422_and_nothing_stored tests/test_store_api.py::test_checksum_header_with_trailing_newline_is_422 tests/test_store_api.py::test_upload_over_limit_is_413 tests/test_store_api.py::test_limit_is_104857600_bytes tests/test_store_api.py::test_error_precedence_413_then_validation_then_checksum tests/test_store_api.py::test_q29_bad_names_are_422 tests/test_store_api.py::test_q29_names_are_case_sensitive tests/test_store_api.py::test_missing_or_bad_build_id_is_422 tests/test_store_api.py::test_download_returns_bytes_and_checksum_header tests/test_store_api.py::test_download_unknown_is_404 tests/test_store_api.py::test_download_bad_version_is_422 tests/test_store_api.py::test_blob_written_under_data_dir tests/test_store_api.py::test_every_response_validates_against_contract_schema  # exits 0
+  - |-
+    cd services/artifact-store && uv run pytest -q tests/test_store_events.py::test_artifact_uploaded_event_sent_after_commit tests/test_store_events.py::test_no_event_when_upload_rejected tests/test_store_events.py::test_event_delivery_failure_does_not_change_upload  # exits 0
+  - |-
+    test -s services/artifact-store/DATA_MODEL.md && test -s docs/tasks/T025.md && python3 scripts/ci/check_shared_copy.py  # exits 0
+  - |-
+    python3 scripts/ci/check_task_scope.py T025-artifact-store origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Wave 2b, runs in parallel with T023 and T024. Implements contracts/api-artifact-store.yml exactly. POST
+  /artifacts/{name}?build_id=... with the raw bytes as application/octet-stream (Q-18 default): the next
+  integer version per name starting at 1, every upload a new version (Q-17, #33); SHA-256 computed by the
+  store; optional X-Checksum-SHA256, a mismatch is 422 checksum_mismatch and nothing is stored; a body over
+  104857600 bytes is 413 payload_too_large, checked in app code (read the body in chunks and stop past the limit,
+  never hold more than the limit in memory); error precedence 413, then 422 validation_failed (path, query,
+  header), then 422 checksum_mismatch. 201 answers the Artifact (name, version, checksum, size_bytes, build_id
+  as sent, uploaded_at). Names follow Q-29 (#86): letters, digits, . - _; first a letter or digit; 1-100
+  characters; case-sensitive; anything else is 422 (a trailing newline too, #121). The store does not call
+  pipeline-runner; build_id is recorded as sent (Q-17). GET /artifacts/{name}/versions/{version}: the bytes
+  with X-Checksum-SHA256, 404 not_found if unknown. Bytes are files under $SHIPYARD_DATA_DIR/artifact_store_blobs/
+  written by a module in app/repos/, the database holds metadata and the path (environment.md Data access row);
+  the file is written and the row committed before the 201. Then artifact.uploaded is sent per PLAN.md §
+  Conventions (after commit, background, never changes the upload). Uploads are accepted whatever the build's
+  later outcome: assumed (#131), option (a); option (c) would not change this task. app/main.py: install(app),
+  routers, create_all at startup (ARTIFACT_STORE_DATABASE_URL); DASHBOARD_URL for events. Tests use tmp_path
+  for the data dir and an in-memory database, and fake the dashboard with httpx.MockTransport. Never edit the
+  T022 copies. Write services/artifact-store/DATA_MODEL.md and the hand-off docs/tasks/T025.md (endpoints, env
+  vars, where blobs live, how the 413 is detected).

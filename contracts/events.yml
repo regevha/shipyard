@@ -453,10 +453,15 @@ $defs:
 
   Timestamp:
     x-assumed: [Q-15]
-    description: RFC 3339 date-time in UTC with the `Z` suffix (Q-15 default).
+    description: >
+      RFC 3339 date-time in UTC with the `Z` suffix (Q-15 default). No line break anywhere (`not` below, same
+      guard as ArtifactName, issue #121): `Z$` alone would accept a value ending in `Z` and a newline.
     type: string
     format: date-time
     pattern: "Z$"
+    not:
+      description: No line break anywhere (Python `re` lets `$` match before a final newline; issue #121).
+      pattern: "\n"
     examples: ["2026-11-25T10:00:00Z"]
 
   PipelineName:
@@ -644,9 +649,15 @@ $defs:
     examples: [3]
 
   Checksum:
-    description: SHA-256 of the artifact bytes as 64 lowercase hex characters, computed by artifact-store (user decision, Q-17, #33).
+    description: >
+      SHA-256 of the artifact bytes as 64 lowercase hex characters, computed by artifact-store (user decision,
+      Q-17, #33). No line break anywhere (`not` below, same guard as ArtifactName, issue #121): the pattern
+      alone would accept 64 hex characters followed by a newline.
     type: string
     pattern: "^[0-9a-f]{64}$"
+    not:
+      description: No line break anywhere (Python `re` lets `$` match before a final newline; issue #121).
+      pattern: "\n"
     examples: [9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08]
 
   ArtifactRef:

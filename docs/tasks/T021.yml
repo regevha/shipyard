@@ -1,0 +1,110 @@
+id: T021
+title: "Wave 2a scaffold: service projects, stack-tests project, dev scripts, shared-copy check, CI matrix"
+owner: devops
+branch: T021-wave2-scaffold
+mode: team
+ui: false
+wave: 2
+depends_on: [T019, T020]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/team/environment.md#commands
+  - docs/team/environment.md#worktrees-ports-and-databases
+  - docs/PLAN.md#waves
+  - docs/PLAN.md#conventions
+  - .github/workflows/ci.yml
+  - docs/tasks/T019.md
+  - docs/tasks/T020.md
+files_touched:
+  - .gitignore
+  - .github/workflows/ci.yml
+  - services/*/pyproject.toml
+  - services/*/uv.lock
+  - services/*/.python-version
+  - services/*/app/__init__.py
+  - services/*/app/main.py
+  - services/*/tests/test_main.py
+  - services/dashboard/static/index.html
+  - stack-tests/pyproject.toml
+  - stack-tests/uv.lock
+  - stack-tests/.python-version
+  - scripts/dev/ports.sh
+  - scripts/dev/start-service.sh
+  - scripts/dev/start-stack.sh
+  - scripts/dev/stop-stack.sh
+  - scripts/ci/check_shared_copy.py
+acceptance:
+  - |-
+    for s in pipeline-runner artifact-store release-service dashboard; do (cd services/$s && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing) || { echo "failed: $s"; exit 1; }; done  # exits 0; coverage is checked by [tool.coverage.report] fail_under, not by a CI flag
+  - |-
+    for s in pipeline-runner artifact-store release-service dashboard; do grep -qx '3.12' services/$s/.python-version && grep -q '^requires-python = ">=3.12,<3.13"$' services/$s/pyproject.toml && grep -q '^name = "shipyard-'$s'"$' services/$s/pyproject.toml && grep -q '^fail_under = ' services/$s/pyproject.toml && grep -q '^package = false$' services/$s/pyproject.toml || { echo "pyproject: $s"; exit 1; }; done  # exits 0, no output
+  - |-
+    cd stack-tests && uv sync --locked && grep -qx '3.12' .python-version  # exits 0
+  - |-
+    for p in .venv/ __pycache__/ .pytest_cache/ .mypy_cache/ .ruff_cache/ '*.db' '*.sqlite' '*.pyc'; do grep -qxF "$p" .gitignore || { echo "missing: $p"; exit 1; }; done  # exits 0 (#8)
+  - |-
+    export SHIPYARD_SLOT=97; scripts/dev/start-stack.sh && for p in 18970 18971 18972 18973; do curl -fsS http://127.0.0.1:$p/openapi.json >/dev/null || exit 1; done && scripts/dev/stop-stack.sh && sleep 1 && ! curl -s http://127.0.0.1:18970/openapi.json  # exits 0: slot 97 = ports 18970-18973, stopped cleanly
+  - |-
+    export SHIPYARD_SLOT=97; scripts/dev/start-stack.sh && p1=$(cat /tmp/shipyard/slot97/*.pid | sort) && scripts/dev/start-stack.sh && p2=$(cat /tmp/shipyard/slot97/*.pid | sort) && test "$p1" != "$p2" && for p in $p1; do ! kill -0 $p 2>/dev/null || exit 1; done && scripts/dev/stop-stack.sh  # exits 0 (#136: a second start stops the first stack, no orphan processes)
+  - |-
+    export SHIPYARD_SLOT=97; python3 -m http.server 18971 --bind 127.0.0.1 >/dev/null 2>&1 & hp=$!; sleep 1; scripts/dev/start-stack.sh > /tmp/t021-refuse.log 2>&1; rc=$?; kill $hp; scripts/dev/stop-stack.sh; test $rc -ne 0 && grep -q 18971 /tmp/t021-refuse.log  # exits 0 (#136: refuses, naming the busy port)
+  - |-
+    env -u SHIPYARD_SLOT scripts/dev/start-stack.sh; test $? -ne 0  # exits 0 when run inside an agent worktree (slot 0 is the lead's)
+  - |-
+    rm -rf /tmp/shipyard/slot97 && ! ss -ltn | grep -E ':1897[0-3] '  # exits 0: slot cleaned up, no port left open
+  - |-
+    python3 scripts/ci/check_shared_copy.py --self-test && python3 scripts/ci/check_shared_copy.py  # both exit 0 (before T022 the canonical files are reported as not created yet)
+  - |-
+    grep -qE 'astral-sh/setup-uv@[0-9a-f]{40} # v' .github/workflows/ci.yml && grep -qF 'version: "0.13.10"' .github/workflows/ci.yml && grep -qF 'pip-audit==2.10.1' .github/workflows/ci.yml  # exits 0 (SHA-pinned, exact versions)
+  - |-
+    python3 -c "import yaml; w=yaml.safe_load(open('.github/workflows/ci.yml')); j=w['jobs']; n=set(j['ci-ok']['needs']); assert set(j)-{'ci-ok'} <= n, n; assert j['service']['strategy']['matrix']['service']==['pipeline-runner','artifact-store','release-service','dashboard']; assert j['service']['strategy']['fail-fast'] is False; print('ci ok')"  # prints ci ok
+  - |-
+    python3 scripts/ci/check_task_scope.py T021-wave2-scaffold origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head (all four matrix entries and the shared-copy job ran)
+  - "lead confirms the proposed coverage fail_under (review gate, not a command)"
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Wave 2a, first task; runs alone. Builds the setup approved on #25 (docs/team/environment.md § "Wave 2 setup
+  (T019, approved)"), nothing more. (1) Root .gitignore with .venv/, __pycache__/, *.pyc, .pytest_cache/,
+  .mypy_cache/, .ruff_cache/, *.db, *.sqlite (closes #8). (2) For each of pipeline-runner, artifact-store,
+  release-service, dashboard: services/<s>/pyproject.toml with exactly the tables of the pyproject.toml row
+  (name shipyard-<s>, [tool.uv] package = false, dependencies fastapi, uvicorn, sqlalchemy, httpx; dev group
+  pytest, pytest-cov, ruff, mypy, pyyaml, jsonschema, types-PyYAML if mypy needs it; [tool.pytest.ini_options]
+  testpaths = ["tests"] and pythonpath = ["."]; [tool.coverage.report] fail_under: propose 85 in all four and say
+  so in the hand-off, the lead confirms), uv.lock (uv 0.13.10), .python-version = 3.12. To keep CI green before
+  service logic exists: app/__init__.py, a minimal app/main.py (app = FastAPI(title="<s>", version="0.1.0"), no
+  routes) and tests/test_main.py (one test: GET /openapi.json is 200 and the title is the service name), plus a
+  placeholder services/dashboard/static/index.html (a valid HTML page saying the UI comes in T027) so the
+  dashboard's later StaticFiles mount has a folder. Ownership after this task: app/main.py, tests/test_main.py,
+  pyproject.toml and uv.lock of a service belong to that service's backend task (T023-T026); static/ belongs to
+  T027 (frontend-dev). Do not create tests/__init__.py (pytest's default import mode needs the test directory on
+  sys.path for the copied helper module of T022). (3) stack-tests/pyproject.toml (name shipyard-stack-tests,
+  package = false, dependencies httpx, pytest, pyyaml, jsonschema; dev ruff, mypy; [tool.mypy] files =
+  ["tests"], strict), uv.lock, .python-version; no tests yet (T028 adds them and the CI stack job). (4)
+  scripts/dev/ports.sh, start-service.sh, start-stack.sh, stop-stack.sh exactly as the Start command, Script names
+  and SQLite file rows say, bash with set -euo pipefail: ports 18000 + 10 x slot + index; servers on 127.0.0.1;
+  exports PIPELINE_RUNNER_URL, ARTIFACT_STORE_URL, RELEASE_SERVICE_URL, DASHBOARD_URL, SHIPYARD_DATA_DIR and the
+  four *_DATABASE_URL defaults; inside an agent worktree (git-dir differs from git-common-dir) refuse to run
+  without an explicit SHIPYARD_SLOT. #136: start-stack.sh first stops a stack already running in that slot (from
+  the pid files), then refuses with a non-zero exit and a message naming the port if any of the slot's four
+  ports is still in use, and only then wipes the data dir; it waits (with a timeout, then fails and prints the
+  log tail) until each /openapi.json answers. stop-stack.sh kills the pid-file processes, waits for them to exit,
+  removes the pid files and exits 0 when nothing runs. (5) scripts/ci/check_shared_copy.py: a fixed map from
+  canonical file to copies: shared/errors.py -> services/<s>/app/errors.py; shared/openapi_conformance.py ->
+  services/<s>/tests/openapi_conformance.py; shared/tests/test_errors.py -> services/<s>/tests/test_shared_errors.py;
+  shared/tests/test_openapi_conformance.py -> services/<s>/tests/test_shared_openapi_conformance.py, for all four
+  services. Rules: canonical present -> every copy must exist and be byte-identical (one line per difference,
+  exit 1); canonical absent and no copy present -> print "<file>: not created yet" and pass (T022 creates them);
+  canonical absent but a copy present -> fail. --self-test runs those cases in temporary trees, no network, exit
+  0 only if each gives the expected result. Standard library only. (6) .github/workflows/ci.yml: job `service`
+  with matrix.service = the four names in index order, fail-fast false, working-directory
+  services/${{ matrix.service }}, steps as in the CI per service row (checkout SHA reused; astral-sh/setup-uv
+  pinned by the commit SHA you look up with gh for the release you use, comment with the tag, version "0.13.10",
+  cache on uv.lock; uv sync --locked; ruff check; ruff format --check; mypy; pytest --cov=app
+  --cov-report=term-missing; uv export --locked into a requirements file and uvx pip-audit==2.10.1 on it); job
+  `shared-copy` running python3 scripts/ci/check_shared_copy.py --self-test and then without flags; both in
+  ci-ok's needs. Permissions stay contents: read. No service logic, no shared/ module, no change to contracts/.
+  Hand-off docs/tasks/T021.md: the setup-uv SHA and tag, the proposed fail_under, the exact pip-audit command,
+  and anything T022-T028 must know about the scripts.

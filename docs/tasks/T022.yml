@@ -1,0 +1,79 @@
+id: T022
+title: "Wave 2a shared modules: error envelope handlers and OpenAPI conformance, copied into the four services"
+owner: backend-dev
+branch: T022-shared-errors-conformance
+mode: team
+ui: false
+wave: 2
+depends_on: [T021]
+migration: false
+read_first:
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/PLAN.md#conventions
+  - docs/OPEN_QUESTIONS.md#q-21-error-envelope-vs-fastapi-defaults
+  - docs/OPEN_QUESTIONS.md#q-22-how-wave-2-diffs-fastapis-openapi-against-the-contracts
+  - contracts/errors.yml
+  - contracts/api-release-service.yml
+  - scripts/ci/check_shared_copy.py
+  - docs/tasks/T021.md
+files_touched:
+  - shared/errors.py
+  - shared/openapi_conformance.py
+  - shared/tests/test_errors.py
+  - shared/tests/test_openapi_conformance.py
+  - services/*/app/errors.py
+  - services/*/tests/openapi_conformance.py
+  - services/*/tests/test_shared_errors.py
+  - services/*/tests/test_shared_openapi_conformance.py
+acceptance:
+  - |-
+    python3 scripts/ci/check_shared_copy.py && ! python3 scripts/ci/check_shared_copy.py | grep -q 'not created yet'  # exits 0: all four canonical files exist and all sixteen copies are identical
+  - |-
+    for s in pipeline-runner artifact-store release-service dashboard; do (cd services/$s && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing) || { echo "failed: $s"; exit 1; }; done  # exits 0, coverage at or above fail_under
+  - |-
+    for s in pipeline-runner artifact-store release-service dashboard; do (cd services/$s && uv run pytest -q tests/test_shared_errors.py::test_validation_error_is_422_envelope_with_dotted_location tests/test_shared_errors.py::test_invalid_json_body_is_422_validation_failed tests/test_shared_errors.py::test_unknown_path_is_404_not_found tests/test_shared_errors.py::test_wrong_method_is_405_and_keeps_allow_header tests/test_shared_errors.py::test_api_error_413_payload_too_large tests/test_shared_errors.py::test_other_4xx_is_422_validation_failed tests/test_shared_errors.py::test_5xx_http_error_is_500_internal_error tests/test_shared_errors.py::test_unhandled_exception_is_500_internal_error tests/test_shared_errors.py::test_openapi_has_no_httpvalidationerror tests/test_shared_errors.py::test_openapi_lists_envelope_for_422_500_and_declared_errors tests/test_shared_errors.py::test_status_code_pairs_match_errors_yml tests/test_shared_errors.py::test_envelope_examples_of_errors_yml_validate) || exit 1; done  # exits 0 (a missing test name fails)
+  - |-
+    for s in pipeline-runner artifact-store release-service dashboard; do (cd services/$s && uv run pytest -q tests/test_shared_openapi_conformance.py::test_identical_spec_has_no_differences tests/test_shared_openapi_conformance.py::test_missing_and_extra_path_reported tests/test_shared_openapi_conformance.py::test_missing_status_reported tests/test_shared_openapi_conformance.py::test_parameter_difference_reported tests/test_shared_openapi_conformance.py::test_required_property_difference_reported tests/test_shared_openapi_conformance.py::test_contract_example_rejected_by_app_schema_reported tests/test_shared_openapi_conformance.py::test_every_difference_reported_not_only_first tests/test_shared_openapi_conformance.py::test_cross_file_refs_resolved tests/test_shared_openapi_conformance.py::test_schema_validator_enforces_contract_state_table) || exit 1; done  # exits 0
+  - |-
+    git diff --quiet origin/main...HEAD -- services/*/app/main.py services/*/pyproject.toml services/*/uv.lock contracts/  # exits 0: no wiring, lockfile or contract change
+  - |-
+    python3 scripts/ci/check_task_scope.py T022-shared-errors-conformance origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Wave 2a, second task; starts after T021 is merged and runs alone. Writes the canonical modules and their tests
+  under shared/, then copies each file verbatim (byte-identical) to every service as mapped by
+  scripts/ci/check_shared_copy.py. shared/ is never run in place: the tests import `app.errors` and
+  `openapi_conformance` as they are laid out in a service, and run in all four services. Find the repo root by
+  walking up from __file__ to the first directory that holds contracts/errors.yml (the copies sit at a different
+  depth than shared/). (1) shared/errors.py (Q-21): pydantic models ErrorDetail and ErrorEnvelope mirroring
+  contracts/errors.yml#/$defs/ErrorEnvelope, ErrorCode as a Literal of its enum; ApiError(status, code, message,
+  details=None); handlers: ApiError as given; RequestValidationError (including a body that is not valid JSON)
+  -> 422 validation_failed with details, location = the error loc joined by dots (body.steps.0.name,
+  path.name, query.build_id, header.x-checksum-sha256); Starlette HTTPException 404 -> not_found, 405 ->
+  method_not_allowed with exc.headers passed through (Allow kept), 413 -> payload_too_large; any other 4xx ->
+  422 validation_failed and any other 5xx -> 500 internal_error (#136, decided in T020: errors.yml x-status-codes
+  pairs validation_failed only with 422 and internal_error only with 500; no contract change); any unhandled
+  exception -> 500 internal_error with no internals in the message. install(app) registers the handlers and
+  replaces app.openapi so that HTTPValidationError and ValidationError are gone, ErrorEnvelope is a component,
+  every operation has 422 and 500 with the envelope (application/json only), and every 4xx/5xx a route declares
+  in `responses=` gets the envelope as its only content. A test checks that the (status, code) pairs ApiError
+  accepts equal errors.yml x-status-codes. (2) shared/openapi_conformance.py (Q-22): differences(app_spec,
+  contract_path) -> list[str], one readable line per difference, every difference not only the first, empty if
+  they conform. Compares: the set of paths and methods; per operation the status codes, the media types of
+  request and response bodies, and the parameters (name, in, required); per JSON body, after resolving every
+  $ref (local and cross-file, e.g. events.yml#/$defs/..., errors.yml#/$defs/..., read from disk only) and
+  ignoring annotations (title, description, examples, default, x-*): the property paths with their required
+  flag and JSON types (null included; anyOf/oneOf branches merged), and every example the contract gives for that
+  body (media-type examples and schema examples) must validate against the app's schema. Pydantic's schema
+  form (anyOf with null, its own names) is not compared literally. Also schema_validator(contract_path, pointer)
+  -> a jsonschema Draft 2020-12 validator for a contract schema (e.g. "#/components/schemas/Run"), so service
+  tests validate real responses against the contract, state tables (anyOf/oneOf) included. Whatever extra
+  normalisation you need goes in the hand-off. (3) Tests: the named tests in acceptance, built on small FastAPI
+  apps and small contracts written to tmp_path, plus the real contracts/errors.yml. Coverage of app/errors.py
+  must reach fail_under in every service. Uses only the dependencies T021 installed (fastapi, httpx, pyyaml,
+  jsonschema); if anything else is needed, stop and report blocked. Never edit app/main.py, pyproject.toml or
+  uv.lock (owned by the service tasks). Hand-off docs/tasks/T022.md: the public functions with signatures, how
+  a service calls install(app) and writes tests/test_contract_conformance.py (a five-line example), and the
+  normalisation rules.
