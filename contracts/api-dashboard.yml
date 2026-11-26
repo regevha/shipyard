@@ -2,14 +2,16 @@ openapi: 3.1.0
 info:
   title: dashboard
   version: "0.1.0"
-  x-assumed: [Q-11, Q-23]
+  x-assumed: [Q-11]
   description: |
     Receives events from the other three services and shows builds, artifacts, approvals and failures. It also
     serves a small web frontend (plain HTML + a little JavaScript, no build step, no React); the pages are not
     part of this contract (folder: Q-02), only the JSON endpoints they fetch.
 
     The frontend fetches only this service's own JSON endpoints, built from the events it received; the
-    dashboard never calls the other services (Q-23 default, assumed, pending user).
+    dashboard never calls the other services. It is read-only: in wave 2 it has no approve, reject or promote
+    buttons and no write endpoint other than receiving events (user decision, Q-32, #89, which confirms the
+    Q-23 default; revisit in wave 3).
 
     Authentication: none in waves 1-2 (user decision, Q-09, #29): anyone who can reach `POST /events` can post an
     event. There is no security scheme.
@@ -18,23 +20,26 @@ info:
 
     | Caller | Callee | Endpoint | When |
     | --- | --- | --- | --- |
-    | any client (a person or a tool) | pipeline-runner | `POST /runs` | to start a run of a pipeline definition |
+    | any client | pipeline-runner | `POST /runs` | to start a run of a pipeline definition |
     | any client | pipeline-runner | `GET /runs/{build_id}` | to follow a run's status and steps |
     | pipeline-runner | dashboard | `POST /events` (`build.started`) | when a run's first step starts |
-    | pipeline-runner | dashboard | `POST /events` (`build.finished`) | when a run ends, passed or failed |
-    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after a passed run, once per artifact (Q-20 default; which artifacts: not settled, see api-pipeline-runner.yml) |
+    | pipeline-runner | dashboard | `POST /events` (`build.finished`) | when a run ends, passed or failed; after the fake upload when every step passed (user decision, #120) |
+    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after the last step passes and before the run is marked passed and `build.finished` is sent, exactly one attempt: one fake artifact, `name` = the pipeline name; a run with a failed step uploads nothing (user decision, Q-34, #110); if the upload fails the run is failed with `failure_reason` `artifact upload failed`, no retry (user decision, #120) |
     | artifact-store | dashboard | `POST /events` (`artifact.uploaded`) | after an upload is stored |
     | any client | artifact-store | `GET /artifacts/{name}/versions/{version}` | to download a stored version |
     | any client | release-service | `POST /releases` | to request a release of one artifact version |
     | release-service | dashboard | `POST /events` (`release.requested`) | after a release is created |
-    | any client (who: Q-32) | release-service | `POST /releases/{release_id}/decision` | to approve or reject |
+    | any client, directly on release-service (for example curl or a script), never through the dashboard (user decision, Q-32, #89) | release-service | `POST /releases/{release_id}/decision` | to approve or reject |
     | release-service | dashboard | `POST /events` (`release.decided`) | after a decision is recorded |
-    | any client (user decision, Q-16, #32; from the dashboard pages: Q-32) | release-service | `POST /releases/{release_id}/promote` | to promote an approved release (no event: user decision, Q-14, #31) |
+    | any client (user decision, Q-16, #32), directly on release-service (for example curl or a script), never through the dashboard (user decision, Q-32, #89) | release-service | `POST /releases/{release_id}/promote` | to promote an approved release; again on a promoted one: 200, unchanged (user decision, Q-31, #88); no event (user decision, Q-14, #31) |
     | any client | release-service | `GET /releases/{release_id}` | to read one release |
-    | dashboard web pages (browser) | dashboard | `GET /builds`, `GET /artifacts`, `GET /releases` | to refresh the views |
+    | dashboard web pages (browser) | dashboard | `GET /builds`, `GET /artifacts`, `GET /releases` | to refresh the views (read only) |
 
     No service calls pipeline-runner or release-service; artifact-store and release-service never call each
-    other (user decision, Q-16, #32).
+    other (user decision, Q-16, #32). The dashboard (service and web pages) calls no other service and has no
+    write endpoint besides `POST /events`. Decide and promote are called on release-service directly (for
+    example curl or a script), never through the dashboard (user decision, Q-32, #89); any client may call
+    promote (user decision, Q-16, #32).
 
     ## Event delivery (Q-11 default, assumed, pending user)
 
@@ -90,6 +95,7 @@ paths:
                     pipeline_name: shipyard-api
                     outcome: failed
                     failed_step: test
+                    failure_reason: null
                     steps:
                       - name: install
                         status: passed
@@ -129,6 +135,7 @@ paths:
                     artifact:
                       name: shipyard-api
                       version: 3
+                    requested_by: sam
                     requested_at: "2026-11-25T10:10:00Z"
               release-decided:
                 value:
@@ -168,7 +175,7 @@ paths:
   /builds:
     get:
       operationId: listBuilds
-      x-assumed: [Q-15, Q-23]
+      x-assumed: [Q-15]
       summary: Builds seen through build.started and build.finished events
       description: >
         Newest first (Q-15 default), read as most recently updated first: ordered by the `occurred_at` of the
@@ -200,6 +207,7 @@ paths:
                         started_at: "2026-11-25T11:00:00Z"
                         finished_at: "2026-11-25T11:02:05Z"
                         failed_step: test
+                        failure_reason: null
                         steps:
                           - name: install
                             status: passed
@@ -222,7 +230,7 @@ paths:
   /artifacts:
     get:
       operationId: listArtifacts
-      x-assumed: [Q-15, Q-23]
+      x-assumed: [Q-15]
       summary: Artifact versions seen through artifact.uploaded events
       description: >
         Newest first (Q-15 default) by `uploaded_at`, which equals the artifact.uploaded event's `occurred_at`
@@ -256,12 +264,13 @@ paths:
   /releases:
     get:
       operationId: listReleases
-      x-assumed: [Q-15, Q-23]
+      x-assumed: [Q-15]
       summary: Releases and their approvals, seen through release.requested and release.decided events
       description: >
         Newest first (Q-15 default), read as most recently updated first: ordered by the `occurred_at` of the
         latest event received for each release, descending. This reading of the default is the architect's, not
-        part of Q-15's text. Promotion is not shown: there is no promotion event (user decision, Q-14, #31; Q-31).
+        part of Q-15's text. Promotion is not shown: there is no promotion event (user decision, Q-14, #31; not
+        reopened by the Q-31 decision, #88).
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
@@ -281,6 +290,7 @@ paths:
                           name: shipyard-api
                           version: 3
                         status: approved
+                        requested_by: sam
                         requested_at: "2026-11-25T10:10:00Z"
                         decided_by: dana
                         decided_at: "2026-11-25T10:20:00Z"
@@ -317,20 +327,26 @@ components:
 
   schemas:
     BuildView:
-      x-assumed: [Q-11, Q-23]
+      x-assumed: [Q-11]
       description: >
         A build as the dashboard knows it from events. `status` is `running` after build.started only, else the
         build.finished outcome. `started_at` is build.started's `occurred_at`, which is when the run's first step
         started (not the runner's `created_at`, the acceptance time); `finished_at` is build.finished's
         `occurred_at`; each is null until that event arrives. `pipeline_name` comes from whichever event arrived.
-        `steps` and `failed_step` come from build.finished ([] and null before it). The anyOf is the state table
-        the schema enforces: running means `finished_at` and `failed_step` are null and `steps` is []; passed
-        means `finished_at` is set, `failed_step` is null and `steps` is events.yml PassedRunSteps; failed means
-        both are set and `steps` is events.yml FailedRunSteps. PassedRunSteps and FailedRunSteps are the same
-        schemas build.finished and pipeline-runner's Run use, so all three accept the same step lists.
+        `steps`, `failed_step` and `failure_reason` come from build.finished ([], null and null before it). The
+        anyOf is the state table the schema enforces: running means `finished_at`, `failed_step` and
+        `failure_reason` are null and `steps` is []; passed means `finished_at` is set, `failed_step` and
+        `failure_reason` are null and `steps` is events.yml PassedRunSteps; failed at a step means
+        `finished_at` and `failed_step` are set, `failure_reason` is null and `steps` is events.yml
+        FailedRunSteps; failed by the upload (user decision, #120) means `finished_at` is set, `failed_step` is
+        null, `failure_reason` is `artifact upload failed` and `steps` is PassedRunSteps. These are the same
+        rows and schemas build.finished and pipeline-runner's Run use, so all three accept the same finished
+        builds. Because the fake upload comes before build.finished (user decision, #120), artifact.uploaded can
+        arrive before build.finished for the same build; the dashboard orders by `occurred_at` as for any
+        event (Q-11 default).
       type: object
       additionalProperties: false
-      required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, steps]
+      required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, failure_reason, steps]
       properties:
         build_id:
           $ref: "events.yml#/$defs/BuildId"
@@ -350,6 +366,10 @@ components:
           anyOf:
             - $ref: "events.yml#/$defs/StepName"
             - type: "null"
+        failure_reason:
+          anyOf:
+            - $ref: "events.yml#/$defs/FailureReason"
+            - type: "null"
         steps:
           type: array
           items:
@@ -362,6 +382,8 @@ components:
               type: "null"
             failed_step:
               type: "null"
+            failure_reason:
+              type: "null"
             steps:
               maxItems: 0
         - properties:
@@ -370,6 +392,8 @@ components:
             finished_at:
               $ref: "events.yml#/$defs/Timestamp"
             failed_step:
+              type: "null"
+            failure_reason:
               type: "null"
             steps:
               $ref: "events.yml#/$defs/PassedRunSteps"
@@ -380,8 +404,21 @@ components:
               $ref: "events.yml#/$defs/Timestamp"
             failed_step:
               $ref: "events.yml#/$defs/StepName"
+            failure_reason:
+              type: "null"
             steps:
               $ref: "events.yml#/$defs/FailedRunSteps"
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            failure_reason:
+              $ref: "events.yml#/$defs/FailureReason"
+            steps:
+              $ref: "events.yml#/$defs/PassedRunSteps"
       examples:
         - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
@@ -389,20 +426,35 @@ components:
           started_at: "2026-11-25T10:00:00Z"
           finished_at: null
           failed_step: null
+          failure_reason: null
           steps: []
+        - build_id: 4b3a2c1d-0e9f-4a8b-b7c6-d5e4f3a2b111
+          pipeline_name: shipyard-api
+          status: failed
+          started_at: "2026-11-25T12:00:00Z"
+          finished_at: "2026-11-25T12:01:02Z"
+          failed_step: null
+          failure_reason: artifact upload failed
+          steps:
+            - name: install
+              status: passed
+              started_at: "2026-11-25T12:00:00Z"
+              finished_at: "2026-11-25T12:01:00Z"
 
     ReleaseView:
-      x-assumed: [Q-11, Q-23]
+      x-assumed: [Q-11]
       description: >
         A release as the dashboard knows it from events. `status` is `pending` after release.requested only, else
-        release.decided's `decision`. `requested_at` is null until release.requested arrives; `decided_by` and
+        release.decided's `decision`. `requested_by` (user decision, Q-30, #87) and `requested_at` come from
+        release.requested and are both null until it arrives (events may arrive out of order, so release.decided
+        can come first); they are null together or set together (not enforced by the schema). `decided_by` and
         `decided_at` are null until release.decided arrives. `artifact` comes from whichever event arrived. The
         anyOf is the state table the schema enforces: pending means `decided_by` and `decided_at` are null;
         approved or rejected means both are set. There is no promotion field, because there is no promotion
-        event (user decision, Q-14, #31; Q-31).
+        event (user decision, Q-14, #31; not reopened by the Q-31 decision, #88).
       type: object
       additionalProperties: false
-      required: [release_id, artifact, status, requested_at, decided_by, decided_at]
+      required: [release_id, artifact, status, requested_by, requested_at, decided_by, decided_at]
       properties:
         release_id:
           $ref: "events.yml#/$defs/ReleaseId"
@@ -410,6 +462,10 @@ components:
           $ref: "events.yml#/$defs/ArtifactRef"
         status:
           $ref: "api-release-service.yml#/components/schemas/ReleaseStatus"
+        requested_by:
+          anyOf:
+            - $ref: "events.yml#/$defs/Actor"
+            - type: "null"
         requested_at:
           anyOf:
             - $ref: "events.yml#/$defs/Timestamp"
@@ -443,9 +499,19 @@ components:
             name: shipyard-api
             version: 3
           status: pending
+          requested_by: sam
           requested_at: "2026-11-25T10:10:00Z"
           decided_by: null
           decided_at: null
+        - release_id: 8c7b6a5d-4e3f-4b2a-9d0e-1f2a3b4c5d10
+          artifact:
+            name: shipyard-web
+            version: 12
+          status: rejected
+          requested_by: null
+          requested_at: null
+          decided_by: lee
+          decided_at: "2026-11-25T10:21:00Z"
 
     BuildPage:
       type: object

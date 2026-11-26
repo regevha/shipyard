@@ -7,13 +7,41 @@ info:
 
 
     Calls it makes (see the table in api-dashboard.yml): it POSTs `build.started` and `build.finished` events to
-    the dashboard's `POST /events`, and after a passed run uploads artifacts with artifact-store's
-    `POST /artifacts/{name}` (Q-20 default). Which artifacts a run uploads is not settled: Q-20 leaves it to the
-    Q-19 decision, and that decision (simulated steps, #34) does not say.
+    the dashboard's `POST /events`, and once the last step has passed it uploads one fake artifact with
+    artifact-store's `POST /artifacts/{name}`; a build with a failed step uploads nothing (user decision, Q-34,
+    #110). The upload comes before `build.finished` (user decision, #120).
 
 
-    Naming: a run is a build. Its ID is `build_id` in every file (events, artifact uploads, dashboard); the
-    resource path is `/runs` (Q-28 default).
+    Uploads (user decision, Q-34, #110; this also settles review note #112): each build whose steps all passed
+    uploads exactly one fake artifact, named after the pipeline (`name` = the definition's `name`, the run's
+    `pipeline_name`), with `POST /artifacts/{pipeline_name}?build_id=<the run's build_id>`. A build with a
+    failed step uploads nothing. The bytes of the fake artifact are not part of the decision; any placeholder
+    content is allowed.
+
+
+    Pipeline names (user decision, #119: "Pipeline names use the same rule as artifact names (Q-29): letters,
+    digits, . - _; starts with a letter or digit; 1-100 chars; case-sensitive. A bad name is rejected with 422
+    when the pipeline is created. No slugifying."): `PipelineName` refers to events.yml ArtifactName, so
+    `POST /runs` with a bad name is 422 validation_failed, no run is created and nothing is uploaded; the name
+    is never changed to fit, so the artifact name always equals the pipeline name.
+
+
+    Order and upload failure (user decision, #120: "The fake upload runs after the last step passes and before
+    the build is marked passed. If the upload fails, the build is failed with reason "artifact upload failed".
+    No retries in wave 2."): (1) the last step passes; (2) the runner uploads the fake artifact, once, while
+    the run's `status` is still `running`; (3) on a 201 the run becomes `passed`, and then `build.finished`
+    (outcome passed) is sent; on any other result of that one attempt the run becomes `failed` with
+    `failed_step` null, every step passed and `failure_reason` `artifact upload failed`, and then
+    `build.finished` (outcome failed, same fields) is sent. No retry. The run's `finished_at` and
+    build.finished's `occurred_at` are when the upload ended, so they are at or after the artifact's
+    `uploaded_at`. "Fails" means a non-201 status, a network error or a timeout: this is the contract's
+    reading, not part of the decision. Consequence: a timeout after the store saved the bytes leaves a stored
+    version and an `artifact.uploaded` event for a failed build (needs decision, issue #131). The timeout
+    value is chosen by the wave 2 runner task (issue #132).
+
+
+    Naming: one run is one build. Its ID is `build_id` in every file (events, artifact uploads, dashboard); the
+    resource paths stay `/runs` and `/runs/{build_id}` (user decision, Q-28, #85).
 
 
     Authentication: none in waves 1-2 (trusted local network), revisited in wave 3 (user decision, Q-09, #29).
@@ -21,8 +49,11 @@ info:
 
 
     Steps are simulated until wave 3 (user decision, Q-19, #34): the runner never executes a step's `command`;
-    it records it as part of the definition and fakes each step's result. How a faked step comes out failed
-    is not decided (Q-33, needs-decision, #107); this contract does not fix a mechanism.
+    it records it as part of the definition and fakes each step's result. The fake result (user decision,
+    Q-33, #107): a step whose `command` is exactly `fail` fails; any other command passes. "Exactly" means
+    string equality, so `FAIL`, ` fail` and `fail now` pass. The step shape is unchanged. With the Q-20
+    default (stop at the first failed step), the first step whose command is `fail` fails and every later
+    step is skipped.
 paths:
   /runs:
     post:
@@ -32,9 +63,14 @@ paths:
       description: >
         Accepts the definition, assigns a `build_id`, answers 202 at once and runs the steps in the background, in
         order, stopping at the first failed step (Q-20 default). Running a step means faking its result; its
-        `command` is never executed (user decision, Q-19, #34; how a step fails: Q-33, open). The runner sends `build.started` when the first
-        step starts and `build.finished` when the run ends. No cancel and no re-run (Q-20 default). Two steps
-        with the same name are 422 validation_failed.
+        `command` is never executed (user decision, Q-19, #34): a command of exactly `fail` fails, any other
+        passes (user decision, Q-33, #107). The runner sends `build.started` when the first step starts. When
+        every step passed it uploads one fake artifact named after the pipeline to artifact-store (user
+        decision, Q-34, #110), once, with no retry, and only then marks the run passed (201) or failed with
+        `failure_reason` `artifact upload failed` (any other result) and sends `build.finished` (user decision,
+        #120); a run with a failed step uploads nothing and sends `build.finished` at once. No cancel and no
+        re-run (Q-20 default). Two steps with the same name are 422 validation_failed. A `name` that breaks
+        the pipeline-name rule is 422 validation_failed and no run is created (user decision, #119).
       requestBody:
         required: true
         content:
@@ -50,6 +86,17 @@ paths:
                       command: pip install -r requirements.txt
                     - name: test
                       command: pytest
+              failing-step:
+                summary: The second step fails (command exactly `fail`), the third is skipped
+                value:
+                  name: shipyard-api
+                  steps:
+                    - name: install
+                      command: pip install -r requirements.txt
+                    - name: test
+                      command: fail
+                    - name: package
+                      command: make dist
       responses:
         "202":
           description: Run accepted; poll `GET /runs/{build_id}` for progress.
@@ -66,6 +113,7 @@ paths:
                     created_at: "2026-11-25T10:00:00Z"
                     finished_at: null
                     failed_step: null
+                    failure_reason: null
                     steps:
                       - name: install
                         status: pending
@@ -76,7 +124,32 @@ paths:
                         started_at: null
                         finished_at: null
         "422":
-          $ref: "#/components/responses/ValidationFailed"
+          description: >
+            The definition is invalid (validation_failed), for example no steps, two steps with the same name,
+            or a `name` that breaks the pipeline-name rule (user decision, #119; events.yml PipelineName). No
+            run is created.
+          content:
+            application/json:
+              schema:
+                $ref: "errors.yml#/$defs/ErrorEnvelope"
+              examples:
+                invalid:
+                  value:
+                    error:
+                      code: validation_failed
+                      message: request validation failed
+                      details:
+                        - location: body.steps
+                          message: must contain at least 1 item
+                invalid-name:
+                  summary: A pipeline name with a space (user decision, #119)
+                  value:
+                    error:
+                      code: validation_failed
+                      message: request validation failed
+                      details:
+                        - location: body.name
+                          message: must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$
         "500":
           $ref: "#/components/responses/InternalError"
   /runs/{build_id}:
@@ -94,6 +167,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/Run"
               examples:
+                upload-failed:
+                  summary: Every step passed but the fake upload failed (user decision, #120)
+                  value:
+                    build_id: 4b3a2c1d-0e9f-4a8b-b7c6-d5e4f3a2b111
+                    pipeline_name: shipyard-api
+                    status: failed
+                    created_at: "2026-11-25T12:00:00Z"
+                    finished_at: "2026-11-25T12:01:02Z"
+                    failed_step: null
+                    failure_reason: artifact upload failed
+                    steps:
+                      - name: install
+                        status: passed
+                        started_at: "2026-11-25T12:00:00Z"
+                        finished_at: "2026-11-25T12:01:00Z"
                 failed:
                   value:
                     build_id: 9e8d7c6b-5a49-4382-a716-05f4e3d2c104
@@ -102,6 +190,7 @@ paths:
                     created_at: "2026-11-25T11:00:00Z"
                     finished_at: "2026-11-25T11:02:05Z"
                     failed_step: test
+                    failure_reason: null
                     steps:
                       - name: install
                         status: passed
@@ -161,7 +250,8 @@ components:
     StepDefinition:
       description: >
         One step; this shape is the user's decision (Q-19, #34). `command` is recorded and never executed: steps
-        are simulated until wave 3 and the runner fakes the result (how a faked step fails: Q-33, open).
+        are simulated until wave 3 and the runner fakes the result: exactly `fail` fails, anything else passes
+        (user decision, Q-33, #107).
       type: object
       additionalProperties: false
       required: [name, command]
@@ -174,6 +264,8 @@ components:
       examples:
         - name: test
           command: pytest
+        - name: test
+          command: fail
 
     RunStatus:
       x-assumed: [Q-13, Q-20]
@@ -186,19 +278,23 @@ components:
       examples: [running, failed]
 
     Run:
-      x-assumed: [Q-20, Q-28]
+      x-assumed: [Q-20]
       description: >
-        One run (= one build, Q-28 default). `created_at` is when the runner accepted the run (the 202), not when
+        One run (= one build, user decision, Q-28, #85). `created_at` is when the runner accepted the run (the 202), not when
         its first step started (that is the first step's `started_at` and build.started's `occurred_at`).
         `steps` lists every step of the definition in order, with the same StepResult shape as build.finished.
-        Fields not known yet are present and null. The anyOf is the state table the schema enforces: running
-        means `finished_at` and `failed_step` are null and no step is failed or skipped; passed means
-        `finished_at` is set, `failed_step` is null and every step passed; failed means both are set and exactly
-        one step failed. Not checkable in JSON Schema, but required: `failed_step` is the name of that failed
-        step, the steps before it passed and those after it are skipped (same rules as build.finished).
+        Fields not known yet are present and null. The anyOf is the state table the schema enforces (same rows
+        as build.finished, plus running): running means `finished_at`, `failed_step` and `failure_reason` are
+        null and no step is failed or skipped (this includes the fake upload, while every step has passed);
+        passed means `finished_at` is set, `failed_step` and `failure_reason` are null and every step passed;
+        failed at a step means `finished_at` and `failed_step` are set, `failure_reason` is null and exactly one
+        step failed; failed by the upload (user decision, #120) means `finished_at` is set, `failed_step` is
+        null, `failure_reason` is `artifact upload failed` and every step passed. Not checkable in JSON Schema,
+        but required: `failed_step` is the name of that failed step, the steps before it passed and those after
+        it are skipped (same rules as build.finished).
       type: object
       additionalProperties: false
-      required: [build_id, pipeline_name, status, created_at, finished_at, failed_step, steps]
+      required: [build_id, pipeline_name, status, created_at, finished_at, failed_step, failure_reason, steps]
       properties:
         build_id:
           $ref: "events.yml#/$defs/BuildId"
@@ -210,14 +306,24 @@ components:
           description: When the runner accepted the run.
           $ref: "events.yml#/$defs/Timestamp"
         finished_at:
-          description: When the run ended (the last run step's `finished_at`); null while running.
+          description: >
+            When the run ended; null while running. The failed step's `finished_at` when a step failed,
+            otherwise when the fake upload ended (user decision, #120).
           anyOf:
             - $ref: "events.yml#/$defs/Timestamp"
             - type: "null"
         failed_step:
-          description: Name of the step that failed; null unless status is failed.
+          description: Name of the step that failed; null unless a step failed.
           anyOf:
             - $ref: "events.yml#/$defs/StepName"
+            - type: "null"
+        failure_reason:
+          description: >
+            `artifact upload failed` when the run failed because the fake upload failed (user decision, #120);
+            null otherwise (events.yml FailureReason). The reason text is the user's; the field name, its
+            required and nullable shape and the enum are the contract's choice.
+          anyOf:
+            - $ref: "events.yml#/$defs/FailureReason"
             - type: "null"
         steps:
           type: array
@@ -232,6 +338,8 @@ components:
               type: "null"
             failed_step:
               type: "null"
+            failure_reason:
+              type: "null"
             steps:
               items:
                 properties:
@@ -244,6 +352,8 @@ components:
               $ref: "events.yml#/$defs/Timestamp"
             failed_step:
               type: "null"
+            failure_reason:
+              type: "null"
             steps:
               $ref: "events.yml#/$defs/PassedRunSteps"
         - properties:
@@ -253,15 +363,29 @@ components:
               $ref: "events.yml#/$defs/Timestamp"
             failed_step:
               $ref: "events.yml#/$defs/StepName"
+            failure_reason:
+              type: "null"
             steps:
               $ref: "events.yml#/$defs/FailedRunSteps"
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            failure_reason:
+              $ref: "events.yml#/$defs/FailureReason"
+            steps:
+              $ref: "events.yml#/$defs/PassedRunSteps"
       examples:
         - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
           status: passed
           created_at: "2026-11-25T10:00:00Z"
-          finished_at: "2026-11-25T10:04:12Z"
+          finished_at: "2026-11-25T10:04:31Z"
           failed_step: null
+          failure_reason: null
           steps:
             - name: install
               status: passed
@@ -277,6 +401,7 @@ components:
           created_at: "2026-11-25T10:00:00Z"
           finished_at: null
           failed_step: null
+          failure_reason: null
           steps:
             - name: install
               status: running
