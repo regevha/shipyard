@@ -65,9 +65,17 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   (b) treat wave 1 as "wave 0" and add a task now; (c) the user decides them directly.
 - **Status:** `answered-by-user` (2026-11-26, issue #25): option (a). The wave 2 setup task (T019) proposes these
   choices in `docs/team/environment.md`; no service task starts until the user approves the proposal. The database
-  is SQLite for every service for now, with data access kept easy to swap (user decision, 2026-11-26). Inter-service auth
-  stays as decided in Q-09.
-- **User decision (2026-11-26, #25):**
+  is SQLite for every service for now, with data access kept easy to swap (item 1 below). Item 2 below, that the
+  lead decides ports, start commands, script names and per-service setup, was replaced later the same day by the
+  setup-task decision quoted last: the setup task proposes them and the user approves. Inter-service auth stays as
+  decided in Q-09.
+- **User decisions (2026-11-26, #25):**
+
+  > 1. Database (#25, wave 0 decisions): Use SQLite for every service for now. We plan to switch to another database later, so keep data access easy to swap.
+
+  > 2. Ports, start commands, script names, per-service setup (#25): You, the lead, decide these. Set them all in one place (for example docs/environment.md) before any service work starts, so no two services clash.
+
+  Later decision, which replaces item 2:
 
   > #25 Q-03: a setup task at the start of wave 2 proposes DB/migrations, start command, ports, per-service pyproject; Nir approves.
 
@@ -93,13 +101,14 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Unclear:** what counts as "going around" (one fix + re-review = one time?), whether the limit is per review or
   per task, and whether it covers only contract disagreements (the brief's wording) or every reviewer/architect
   loop (how the lead applied it to T010).
-- **Default, assumed, pending user:** after two fix rounds on the same review with Blocking items still open, the
-  lead stops and reports; applied to every reviewer/architect loop, not only contracts.
+- **Former default (assumed until the user's answer below):** after two fix rounds on the same review with
+  Blocking items still open, the lead stops and reports; applied to every reviewer/architect loop.
 - **Options:** (a) the user's cap applies in Shipyard and is recorded as a local override; (b) change `lead.md` in
   the shared core.
 - **Status:** `answered-by-user` (2026-11-26, issue #27): option (a), a Shipyard-only rule recorded in
   `docs/team/shipyard-overrides.md` (not synced; it overrides `docs/team/lead.md` § "Workflow" step 5 in this repo).
-  It counts fix rounds on one review and applies to every review, not only contract disagreements.
+  The user's words do not limit it to contracts, so it applies to every review. Counting rounds per review is the
+  lead's reading, not the user's words.
 - **User decision (2026-11-26, #27):**
 
   > #27 Q-05: after 2 fix rounds with Blocking items still open, stop and report (Shipyard-only rule).
@@ -123,7 +132,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   passed on main 71643fc. Issue #28 is closed.
 - **User decision (2026-11-26, #28):**
 
-  > #28 Q-06: add ci-ok as the fifth required check in ruleset Main1 (Nir does this).
+  > 3. ci-ok as a required check (#28): I will add ci-ok to the Main1 ruleset myself in the GitHub settings. Do not change repo settings. After I tell you it's done, confirm that ci-ok shows as required.
 
 ### Q-07 The brief is not in the repo
 - **Point:** there was no `docs/PRODUCT.md`, and the user's brief existed only in the lead session (the lead's
@@ -259,7 +268,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   `POST /releases/{id}/promote`; it returns 409 unless the release is approved and records `promoted_at`;
   promotion is a recorded state change only; a release references one artifact (name + version); any client may
   call it; release-service does not call artifact-store to check the artifact exists. `x-assumed: [Q-16]` is
-  removed from the contracts. Whether the dashboard pages may call it from the browser remains open (Q-32).
+  removed from the contracts. Whether the dashboard pages may call it from the browser was open until the user's Q-32 answer (#89, no dashboard buttons in wave 2).
 - **User decision (2026-11-25, #32):**
 
   > #32 (Q-16) Promotion: keep the T012 default. POST /releases/{id}/promote, 409 unless approved, records promoted_at, state change only; a release references one artifact (name + version); any client may call it; no existence check against artifact-store.
@@ -289,7 +298,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Status:** `answered-by-user` (2026-11-25, issue #34): steps are simulated until wave 3, a variant of option
   (b) that keeps the shape `{name, steps: [{name, command}]}` (no per-step outcome field). The runner records
   each `command` and never executes it, and fakes each step's result. `x-assumed: [Q-19]` is removed from the
-  contracts. How a faked step comes out failed is not decided: Q-33 (issue #107).
+  contracts. How a faked step comes out failed was settled later by the user's Q-33 answer (#107).
 - **User decision (2026-11-25, #34):**
 
   > #34 (Q-19) Pipeline steps: simulated until wave 3 (no real shell commands). Shape stays {name, steps:[{name, command}]}; the runner fakes each step's result.
@@ -297,9 +306,10 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 ### Q-20 Run lifecycle
 - **Status:** `open`. T012 default, **assumed, pending user**: `POST /runs` returns 202 with the run ID and runs
   in the background; `GET /runs/{id}` gives the status and per-step results; steps run in order and the run stops
-  at the first failed step; no cancel and no re-run in wave 1-2; the runner uploads artifacts after a passed run.
-  Which files a step produces as artifacts depended on Q-19; the user's Q-19 answer (#34: simulated steps) does
-  not say, so it is now Q-34 (#110, needs-decision).
+  at the first failed step; no cancel and no re-run in wave 1-2. The default's last part, that the runner uploads
+  artifacts after a passed run, is superseded by the user's answers on Q-34 (#110: one fake artifact per build
+  whose steps all passed) and Q-36 (#120: the upload runs before the build is marked passed, and a failed upload
+  fails the build).
 
 ### Q-21 Error envelope vs FastAPI defaults
 - **Point:** the brief asks for one shared error envelope. FastAPI's built-in errors use `{"detail": ...}` and its
@@ -344,9 +354,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **User decision (2026-11-26, #86):**
 
   > #86 Q-29: artifact names: letters, digits, . - _; starts with a letter or digit; 1-100 chars; case-sensitive; no / or spaces.
-- **Known gap (review of T012, issue #103):** `ArtifactName` currently accepts `/`, which cannot be the
-  `{name}` path segment (a name like `a/b` would not route to `/artifacts/{name}`). Not settled here: rejecting
-  `/`, percent-encoding it, or another rule is part of this question.
+- **Former gap (review of T012, issue #103), closed by the answer above:** `ArtifactName` accepted `/`, which
+  cannot be the `{name}` path segment (a name like `a/b` would not route to `/artifacts/{name}`).
 
 ### Q-30 Who requested a release
 - **Point (found by T012):** the brief asks release-service to record who and when for the decision, not for the
@@ -362,7 +371,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 ### Q-31 Promoting twice, and promotion on the dashboard
 - **Point (found by T012):** the user's Q-16 decision (#32) returns 409 unless the release is approved and records
   `promoted_at`; it does not say what a second promote of an approved, already promoted release returns (200 and
-  unchanged, 200 with a new time, or 409). This part is open.
+  unchanged, 200 with a new time, or 409). This part was open until the user's answer below.
 - **Settled by the user, consequence noted:** the user's Q-14 decision (#31) has no promotion event, so the
   dashboard cannot show whether a release was promoted, although the brief's blocking of promotion is the point
   of release-service. That follows from the decision and is not reopened here; showing promotions on the
@@ -375,8 +384,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 
 ### Q-32 Who calls decision and promote, and from where
 - **Point (found by T012):** the user's Q-16 decision (#32) says any client may call promote (decided). The Q-23
-  default (still assumed, pending user) says the frontend fetches only the dashboard's own endpoints and the
-  dashboard never calls the other services. The clash below remains open. If people approve, reject or promote from the dashboard pages, the browser either calls
+  default (then still assumed; now resolved by T017) says the frontend fetches only the dashboard's own endpoints
+  and the dashboard never calls the other services. The clash below was open until the user's answer. If people approve, reject or promote from the dashboard pages, the browser either calls
   release-service directly (needs CORS, and the pages need release-service's address) or the dashboard forwards
   the call (the dashboard then calls another service, against Q-23). Nothing says who calls the decision endpoint
   at all.
@@ -429,7 +438,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Point (found by T017, issue #120):** Q-34 does not say whether the upload happens before or after
   `build.finished`, or what a failed upload means for the build.
 - **Status:** `answered-by-user` (2026-11-26, issue #120): the upload runs after the last step passes and before the
-  build is marked passed and `build.finished` is sent; a failed upload fails the build with the reason
+  build is marked passed (so before `build.finished`, the contract's reading); a failed upload fails the build with the reason
   `artifact upload failed`; no retries in wave 2. Written into T017 (PR #123). How the reason is carried is the
   contract's choice, not the user's: a required, nullable `failure_reason` in the runner's `Run`,
   `BuildFinishedData` and the dashboard's `BuildView`, whose only value is that text. The contracts read "fails" as

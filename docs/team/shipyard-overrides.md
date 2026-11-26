@@ -15,5 +15,6 @@ This replaces "one fix round" in `docs/team/lead.md` § "Workflow" step 5 and §
   verifies only those items on the new commit.
 - If Blocking items are still open after the second fix round, the lead stops work on that task and reports to the
   user (what is still blocking, and the options) instead of starting a third round.
-- It applies to every review (code, contracts, docs), not only contract disagreements. Rounds are counted per
-  review; a new user decision that changes the task's scope starts a new review.
+- Lead's reading, not the user's words: it applies to every review (code, contracts, docs), because the user did
+  not limit it to contracts, and rounds are counted per review. Tester and e2e defect rounds (`docs/team/lead.md`
+  § "Lead-only rules") are not covered by these words and keep one round unless the user extends the rule.
