@@ -39,10 +39,12 @@ merges first, because `scripts/ci/check_task_scope.py` reads `docs/tasks/<ID>.ym
 (CI); then T012 (contracts), which must pass T011's checker. T011 and T012 have disjoint `files_touched`, but T012
 depends on T011, so they run one after the other.
 
-**Wave 2: the four services, built against the contracts (outline only, no specs yet; the wave 2/3 split is the lead's
-outline, not the brief's, Q-27).** Starts with the decisions
-listed as "wave 0" in `docs/team/environment.md` (Q-03). Rough task list, at most 3 build agents at a time, so it
-will likely split into 2a and 2b:
+**Wave 2: the thinnest slice through all four services, built against the contracts (outline only, no specs yet;
+the wave 2/3 split was the lead's outline and the user confirmed it on 2026-11-26, Q-27).** Starts with the setup
+task T019, which proposes the decisions listed as "wave 0" in `docs/team/environment.md` (Q-03); the user approves
+the proposal before any service task starts. The database is SQLite for every service for now, with data access
+easy to swap (user decision, 2026-11-26). Rough task list, at most 3 build agents at a time, so it will likely split
+into 2a and 2b:
 - Setup (devops): per-service `pyproject.toml` and lockfile, port base and slot numbering, local start command,
   CI jobs per service, `environment.md` update (Q-01, Q-02, Q-03).
 - Per service (backend-dev): `dashboard` events intake + read API; `pipeline-runner`; `artifact-store`;
@@ -52,7 +54,7 @@ will likely split into 2a and 2b:
 - Stack-level HTTP test (tester): start all four, run a pipeline, upload, request, approve, promote, check the
   dashboard read API.
 
-**Wave 3: hardening (outline only; lead's outline, Q-27).** Replace the HTTP event calls with a real queue (the
+**Wave 3: hardening (outline only; confirmed by the user, Q-27).** Replace the HTTP event calls with a real queue (the
 contracts keep the event
 payloads); auth between services if not settled earlier; retries, persistence and failure handling; e2e browser
 flows (e2e-tester); possibly a React dashboard (user decision at that point).
@@ -219,15 +221,18 @@ Owner, branch, dependencies and `read_first` are in each `docs/tasks/Tnn.yml`.
 | ID | Task | Acceptance (runnable command; reading of the brief, Q-08) | Files touched | Status |
 | --- | --- | --- | --- | --- |
 | [T010](tasks/T010.yml) ([#9](https://github.com/regevha/shipyard/issues/9)) | Wave 1 plan, contract file format, task specs, open questions | `python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('docs/tasks/*.yml')]; print('ok')"` prints `ok`; the disjoint check in `docs/tasks/T010.yml` prints `disjoint` | `docs/PLAN.md`, `docs/OPEN_QUESTIONS.md`, `docs/tasks/T010.yml`, `docs/tasks/T011.yml`, `docs/tasks/T012.yml` | done (PR #12, a265a4f) |
-| [T011](tasks/T011.yml) ([#10](https://github.com/regevha/shipyard/issues/10)) | CI: contract and task-spec checker, aggregate `ci-ok` job | `python3 scripts/ci/check_contracts.py --self-test` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; `ci-ok` check run is `success` on the PR head and on `main` (command in `T011.yml`) | `.github/workflows/ci.yml`, `scripts/ci/check_contracts.py`, `scripts/ci/requirements-contracts.txt`, `scripts/ci/fixtures/contracts/**` | done (PR #51, 50d9498; ci-ok green on main, not yet required: Q-06) |
+| [T011](tasks/T011.yml) ([#10](https://github.com/regevha/shipyard/issues/10)) | CI: contract and task-spec checker, aggregate `ci-ok` job | `python3 scripts/ci/check_contracts.py --self-test` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; `ci-ok` check run is `success` on the PR head and on `main` (command in `T011.yml`) | `.github/workflows/ci.yml`, `scripts/ci/check_contracts.py`, `scripts/ci/requirements-contracts.txt`, `scripts/ci/fixtures/contracts/**` | done (PR #51, 50d9498; `ci-ok` required in ruleset Main1 since 2026-11-26: Q-06) |
 | [T012](tasks/T012.yml) ([#11](https://github.com/regevha/shipyard/issues/11)) | Wave 1 contracts: events, errors, four service APIs; open questions updated | `python3 scripts/ci/check_contracts.py` exits 0; the file-presence loop in `T012.yml` exits 0; reviewer APPROVE on cross-service consistency (review gate, not a command) | `contracts/events.yml`, `contracts/errors.yml`, `contracts/api-pipeline-runner.yml`, `contracts/api-artifact-store.yml`, `contracts/api-release-service.yml`, `contracts/api-dashboard.yml`, `docs/OPEN_QUESTIONS.md` | done (PR #84, af3a864; full reviewer APPROVE after 2 fix rounds) |
 | [T013](https://github.com/regevha/shipyard/issues/38) ([#38](https://github.com/regevha/shipyard/issues/38)) | Store the user's brief verbatim (`docs/BRIEF.md`); check every "brief" citation against it; label the lead's own choices as assumptions (Q-25..Q-27) | `python3 scripts/team/check_brief_quotes.py --self-test` and `python3 scripts/team/check_brief_quotes.py` exit 0: every double-quoted passage (12+ characters, outside code) in `docs/OPEN_QUESTIONS.md` and `docs/PLAN.md` is word for word in `docs/BRIEF.md`, or is a section name, is labelled as a paraphrase, or is declared with its source in the script's `OTHER_SOURCES`; every `resolved-by-user-brief` entry has a Brief (verbatim) bullet with a quote found in the brief; reviewer APPROVE (review gate, not a command) | `docs/BRIEF.md`, `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md`, `scripts/team/check_brief_quotes.py` | done (PR #39, 741e554) |
 | T014 ([#73](https://github.com/regevha/shipyard/issues/73)) | Contract file format amendments from the T011 review (#53, #57, #65, #67, #71, #72): error-response media type, non-JSON YAML values and merge keys, outermost-composer rule, allowed `$ref` forms and scanning, no network | `python3 -I scripts/team/check_brief_quotes.py` exits 0; reviewer APPROVE (review gate, not a command) | `docs/PLAN.md` | done (PR #74, 5a8c2a5) |
 | T015 ([PR #80](https://github.com/regevha/shipyard/pull/80)) | Correct Q-06 (ruleset Main1); T011, T013, T014 done | `python3 -I scripts/team/check_brief_quotes.py` exits 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md` | done (PR #80, 7d8362c) |
-| T016 (this PR) | Wave 1 close-out: T012 done, Q-34, stale wording (#113, #81, #82, #83) | `python3 -I scripts/team/check_brief_quotes.py` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md` | in-review |
+| T016 ([PR #114](https://github.com/regevha/shipyard/pull/114)) | Wave 1 close-out: T012 done, Q-34, stale wording (#113, #81, #82, #83) | `python3 -I scripts/team/check_brief_quotes.py` exits 0; `python3 scripts/ci/check_contracts.py` exits 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md` | done (PR #114, 218c401) |
+| [T017](tasks/T017.yml) ([#116](https://github.com/regevha/shipyard/issues/116)) | Contracts apply the user's decisions of 2026-11-26 (Q-23, Q-28..Q-35, Q-36; #112) | `python3 scripts/ci/check_contracts.py` and `--self-test` exit 0; the `x-assumed` grep in `T017.yml` exits 0; full reviewer finds no cross-file disagreement (review gate, not a command) | the six `contracts/*.yml` | T017_STATUS |
+| T018 ([#117](https://github.com/regevha/shipyard/issues/117)) | Record the user's decisions of 2026-11-26 in `docs/OPEN_QUESTIONS.md` (Q-03..Q-06, Q-24, Q-25, Q-27..Q-36; Q-23 resolved by T017), the Q-05 rule in `docs/team/shipyard-overrides.md`, this table | `python3 -I scripts/team/check_brief_quotes.py` and `--self-test` exit 0; reviewer APPROVE (review gate) | `docs/OPEN_QUESTIONS.md`, `docs/PLAN.md`, `docs/team/shipyard-overrides.md`, `scripts/team/check_brief_quotes.py` (one `OTHER_SOURCES` line) | in-review |
+| T019 ([#25](https://github.com/regevha/shipyard/issues/25)) | Wave 2 setup proposal (Q-03): SQLite and migration tool, start command, ports and slots, script names, per-service `pyproject.toml`, in `docs/team/environment.md`; the user approves before any service task | spec to be written by the architect | `docs/team/environment.md` (more once specified) | todo (devops; not started) |
 
 ## Contract change requests
 
 | Date | From | Change | Status |
 | --- | --- | --- | --- |
-| 2026-11-25 | reviewer (T012 verify, #112) | `contracts/api-pipeline-runner.yml` info: cite #110 / Q-34 in the sentence on which artifacts a run uploads (wording only) | todo, apply at the start of wave 2 |
+| 2026-11-25 | reviewer (T012 verify, #112) | `contracts/api-pipeline-runner.yml` info: cite #110 / Q-34 in the sentence on which artifacts a run uploads (wording only) | applied in T017 (PR #123) |

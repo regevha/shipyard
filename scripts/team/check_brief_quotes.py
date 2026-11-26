@@ -32,6 +32,7 @@ OTHER_SOURCES = {
     "whether the dashboard is server-rendered or a separate frontend": "docs/team/environment.md \u00a7 Open",
     "Branch not protected": "gh api .../branches/main/protection response",
     "going around": "lead's question about the brief's 'go around', Q-05",
+    "artifact upload failed": "user decision on issue #120 (Q-36), 2026-11-26",
     "contracts + CI": "docs/PLAN.md wave 1 heading (lead's wording, Q-25)",
     "T012 default: assumed, pending user": "docs/OPEN_QUESTIONS.md status marker",
     "any valid event": "docs/PLAN.md contract format term",
