@@ -2,10 +2,12 @@
 
 import hashlib
 import tempfile
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
+from pathlib import Path as FsPath
 from typing import IO, Annotated
 
+import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
@@ -67,9 +69,10 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBody]:
 MAX_VERSION = 2**63 - 1  # larger versions cannot exist (and do not fit a database integer)
 
 
-def _chunks(handle: IO[bytes]) -> Iterator[bytes]:
-    with handle:
-        while chunk := handle.read(1024 * 1024):
+async def _chunks(path: FsPath) -> AsyncGenerator[bytes, None]:
+    """Open inside the generator so a cancelled stream (client gone) closes the file."""
+    async with await anyio.open_file(path, "rb") as handle:
+        while chunk := await handle.read(1024 * 1024):
             yield chunk
 
 
@@ -153,9 +156,8 @@ def download_artifact(
     if not path.is_file():
         raise RuntimeError("blob file is missing")  # answered as 500 internal_error
     # A plain streamed 200: no Range handling (the contract has no 206), whole file every time.
-    handle = path.open("rb")
     return StreamingResponse(
-        _chunks(handle),
+        _chunks(path),
         media_type="application/octet-stream",
         headers={
             "X-Checksum-SHA256": artifact.checksum,

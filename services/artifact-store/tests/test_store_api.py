@@ -1,5 +1,10 @@
+import contextlib
+import gc
 import hashlib
+import os
+import warnings
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from conftest import BUILD
@@ -281,3 +286,40 @@ def test_version_retry_after_concurrent_insert(client: TestClient, settings: Set
     finally:
         Session.commit = original  # type: ignore[method-assign]
     assert r.status_code == 201 and r.json()["version"] == 2
+
+
+def test_abandoned_download_stream_closes_the_file(tmp_path: Path) -> None:
+    import asyncio
+
+    from app.routers.artifacts import _chunks
+
+    blob = tmp_path / "blob"
+    blob.write_bytes(b"x" * (3 * 1024 * 1024))
+
+    async def run() -> None:
+        gen = _chunks(blob)
+        assert len(await anext(gen)) == 1024 * 1024  # started, file open
+        await gen.aclose()  # what cancellation does to the generator
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        asyncio.run(run())
+        gc.collect()
+    assert not _open_fds_on(blob)
+
+    async def cancelled() -> None:
+        gen = _chunks(blob)
+        task = asyncio.ensure_future(anext(gen))
+        await asyncio.sleep(0)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+            await task
+        await gen.aclose()
+
+    asyncio.run(cancelled())
+    assert not _open_fds_on(blob)
+
+
+def _open_fds_on(blob: Path) -> list[str]:
+    fd_dir = Path("/proc/self/fd")
+    return [p.name for p in fd_dir.iterdir() if os.path.realpath(p) == str(blob)]
