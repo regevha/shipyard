@@ -430,7 +430,12 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   `build.finished`, or what a failed upload means for the build.
 - **Status:** `answered-by-user` (2026-11-26, issue #120): the upload runs after the last step passes and before the
   build is marked passed and `build.finished` is sent; a failed upload fails the build with the reason
-  `artifact upload failed`; no retries in wave 2. Written into T017 (PR #123).
+  `artifact upload failed`; no retries in wave 2. Written into T017 (PR #123). How the reason is carried is the
+  contract's choice, not the user's: a required, nullable `failure_reason` in the runner's `Run`,
+  `BuildFinishedData` and the dashboard's `BuildView`, whose only value is that text. The contracts read "fails" as
+  one attempt where anything but a 201 counts, including a network error or a timeout. Follow-ups: issue #131
+  (`needs-decision`: a timeout after the store saved the bytes leaves an artifact for a failed build) and issue
+  #132 (the wave 2 runner task picks the timeout).
 - **User decision (2026-11-26, #120):**
 
   > #120: The fake upload runs after the last step passes and before the build is marked passed. If the upload fails, the build is failed with reason "artifact upload failed". No retries in wave 2.
