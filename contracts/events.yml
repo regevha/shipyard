@@ -109,7 +109,7 @@ $defs:
       - event_id: 6a1e9d24-73b5-4f0c-a8e2-9b4d5c6f7a02
         type: build.finished
         schema_version: 1
-        occurred_at: "2026-11-25T10:04:12Z"
+        occurred_at: "2026-11-25T10:04:31Z"
         source: pipeline-runner
         data:
           build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
@@ -315,7 +315,8 @@ $defs:
       failure_reason:
         description: >
           Set only when the build failed without a failed step, that is when the fake upload failed (user
-          decision, #120); null otherwise.
+          decision, #120); null otherwise. The reason text is the user's; the field name, its required and
+          nullable shape and the FailureReason enum are the contract's choice.
         anyOf:
           - $ref: "#/$defs/FailureReason"
           - type: "null"
@@ -475,7 +476,9 @@ $defs:
       Why a build failed when no step failed. The only value is the one the user decided (user decision, #120:
       "The fake upload runs after the last step passes and before the build is marked passed. If the upload
       fails, the build is failed with reason "artifact upload failed". No retries in wave 2."). A build that
-      failed at a step has no reason (null; the step is in `failed_step`).
+      failed at a step has no reason (null; the step is in `failed_step`). The reason text is the user's; the
+      field name `failure_reason`, its required-and-nullable shape in Run, BuildFinishedData and BuildView, and
+      this one-value enum are the contract's choice, not part of the decision.
     type: string
     enum: [artifact upload failed]
     examples: [artifact upload failed]

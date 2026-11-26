@@ -30,10 +30,14 @@ info:
     the build is marked passed. If the upload fails, the build is failed with reason "artifact upload failed".
     No retries in wave 2."): (1) the last step passes; (2) the runner uploads the fake artifact, once, while
     the run's `status` is still `running`; (3) on a 201 the run becomes `passed`, and then `build.finished`
-    (outcome passed) is sent; on any other result of that one attempt (a non-201 status, a network error or a
-    timeout) the run becomes `failed` with `failed_step` null, every step passed and `failure_reason`
-    `artifact upload failed`, and then `build.finished` (outcome failed, same fields) is sent. No retry. The
-    run's `finished_at` and build.finished's `occurred_at` are when the upload ended.
+    (outcome passed) is sent; on any other result of that one attempt the run becomes `failed` with
+    `failed_step` null, every step passed and `failure_reason` `artifact upload failed`, and then
+    `build.finished` (outcome failed, same fields) is sent. No retry. The run's `finished_at` and
+    build.finished's `occurred_at` are when the upload ended, so they are at or after the artifact's
+    `uploaded_at`. "Fails" means a non-201 status, a network error or a timeout: this is the contract's
+    reading, not part of the decision. Consequence: a timeout after the store saved the bytes leaves a stored
+    version and an `artifact.uploaded` event for a failed build (needs decision, issue #131). The timeout
+    value is chosen by the wave 2 runner task (issue #132).
 
 
     Naming: one run is one build. Its ID is `build_id` in every file (events, artifact uploads, dashboard); the
@@ -316,7 +320,8 @@ components:
         failure_reason:
           description: >
             `artifact upload failed` when the run failed because the fake upload failed (user decision, #120);
-            null otherwise (events.yml FailureReason).
+            null otherwise (events.yml FailureReason). The reason text is the user's; the field name, its
+            required and nullable shape and the enum are the contract's choice.
           anyOf:
             - $ref: "events.yml#/$defs/FailureReason"
             - type: "null"
@@ -378,7 +383,7 @@ components:
           pipeline_name: shipyard-api
           status: passed
           created_at: "2026-11-25T10:00:00Z"
-          finished_at: "2026-11-25T10:04:12Z"
+          finished_at: "2026-11-25T10:04:31Z"
           failed_step: null
           failure_reason: null
           steps:

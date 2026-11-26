@@ -341,7 +341,9 @@ components:
         FailedRunSteps; failed by the upload (user decision, #120) means `finished_at` is set, `failed_step` is
         null, `failure_reason` is `artifact upload failed` and `steps` is PassedRunSteps. These are the same
         rows and schemas build.finished and pipeline-runner's Run use, so all three accept the same finished
-        builds.
+        builds. Because the fake upload comes before build.finished (user decision, #120), artifact.uploaded can
+        arrive before build.finished for the same build; the dashboard orders by `occurred_at` as for any
+        event (Q-11 default).
       type: object
       additionalProperties: false
       required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, failure_reason, steps]
