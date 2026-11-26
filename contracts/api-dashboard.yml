@@ -23,8 +23,8 @@ info:
     | any client | pipeline-runner | `POST /runs` | to start a run of a pipeline definition |
     | any client | pipeline-runner | `GET /runs/{build_id}` | to follow a run's status and steps |
     | pipeline-runner | dashboard | `POST /events` (`build.started`) | when a run's first step starts |
-    | pipeline-runner | dashboard | `POST /events` (`build.finished`) | when a run ends, passed or failed |
-    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after a passed run, exactly once: one fake artifact, `name` = the pipeline name; a failed run uploads nothing (user decision, Q-34, #110); order relative to `build.finished` and what happens when the upload fails: open (#120) |
+    | pipeline-runner | dashboard | `POST /events` (`build.finished`) | when a run ends, passed or failed; after the fake upload when every step passed (user decision, #120) |
+    | pipeline-runner | artifact-store | `POST /artifacts/{name}?build_id=...` | after the last step passes and before the run is marked passed and `build.finished` is sent, exactly one attempt: one fake artifact, `name` = the pipeline name; a run with a failed step uploads nothing (user decision, Q-34, #110); if the upload fails the run is failed with `failure_reason` `artifact upload failed`, no retry (user decision, #120) |
     | artifact-store | dashboard | `POST /events` (`artifact.uploaded`) | after an upload is stored |
     | any client | artifact-store | `GET /artifacts/{name}/versions/{version}` | to download a stored version |
     | any client | release-service | `POST /releases` | to request a release of one artifact version |
@@ -95,6 +95,7 @@ paths:
                     pipeline_name: shipyard-api
                     outcome: failed
                     failed_step: test
+                    failure_reason: null
                     steps:
                       - name: install
                         status: passed
@@ -206,6 +207,7 @@ paths:
                         started_at: "2026-11-25T11:00:00Z"
                         finished_at: "2026-11-25T11:02:05Z"
                         failed_step: test
+                        failure_reason: null
                         steps:
                           - name: install
                             status: passed
@@ -331,14 +333,18 @@ components:
         build.finished outcome. `started_at` is build.started's `occurred_at`, which is when the run's first step
         started (not the runner's `created_at`, the acceptance time); `finished_at` is build.finished's
         `occurred_at`; each is null until that event arrives. `pipeline_name` comes from whichever event arrived.
-        `steps` and `failed_step` come from build.finished ([] and null before it). The anyOf is the state table
-        the schema enforces: running means `finished_at` and `failed_step` are null and `steps` is []; passed
-        means `finished_at` is set, `failed_step` is null and `steps` is events.yml PassedRunSteps; failed means
-        both are set and `steps` is events.yml FailedRunSteps. PassedRunSteps and FailedRunSteps are the same
-        schemas build.finished and pipeline-runner's Run use, so all three accept the same step lists.
+        `steps`, `failed_step` and `failure_reason` come from build.finished ([], null and null before it). The
+        anyOf is the state table the schema enforces: running means `finished_at`, `failed_step` and
+        `failure_reason` are null and `steps` is []; passed means `finished_at` is set, `failed_step` and
+        `failure_reason` are null and `steps` is events.yml PassedRunSteps; failed at a step means
+        `finished_at` and `failed_step` are set, `failure_reason` is null and `steps` is events.yml
+        FailedRunSteps; failed by the upload (user decision, #120) means `finished_at` is set, `failed_step` is
+        null, `failure_reason` is `artifact upload failed` and `steps` is PassedRunSteps. These are the same
+        rows and schemas build.finished and pipeline-runner's Run use, so all three accept the same finished
+        builds.
       type: object
       additionalProperties: false
-      required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, steps]
+      required: [build_id, pipeline_name, status, started_at, finished_at, failed_step, failure_reason, steps]
       properties:
         build_id:
           $ref: "events.yml#/$defs/BuildId"
@@ -358,6 +364,10 @@ components:
           anyOf:
             - $ref: "events.yml#/$defs/StepName"
             - type: "null"
+        failure_reason:
+          anyOf:
+            - $ref: "events.yml#/$defs/FailureReason"
+            - type: "null"
         steps:
           type: array
           items:
@@ -370,6 +380,8 @@ components:
               type: "null"
             failed_step:
               type: "null"
+            failure_reason:
+              type: "null"
             steps:
               maxItems: 0
         - properties:
@@ -378,6 +390,8 @@ components:
             finished_at:
               $ref: "events.yml#/$defs/Timestamp"
             failed_step:
+              type: "null"
+            failure_reason:
               type: "null"
             steps:
               $ref: "events.yml#/$defs/PassedRunSteps"
@@ -388,8 +402,21 @@ components:
               $ref: "events.yml#/$defs/Timestamp"
             failed_step:
               $ref: "events.yml#/$defs/StepName"
+            failure_reason:
+              type: "null"
             steps:
               $ref: "events.yml#/$defs/FailedRunSteps"
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            failure_reason:
+              $ref: "events.yml#/$defs/FailureReason"
+            steps:
+              $ref: "events.yml#/$defs/PassedRunSteps"
       examples:
         - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
@@ -397,7 +424,20 @@ components:
           started_at: "2026-11-25T10:00:00Z"
           finished_at: null
           failed_step: null
+          failure_reason: null
           steps: []
+        - build_id: 4b3a2c1d-0e9f-4a8b-b7c6-d5e4f3a2b111
+          pipeline_name: shipyard-api
+          status: failed
+          started_at: "2026-11-25T12:00:00Z"
+          finished_at: "2026-11-25T12:01:02Z"
+          failed_step: null
+          failure_reason: artifact upload failed
+          steps:
+            - name: install
+              status: passed
+              started_at: "2026-11-25T12:00:00Z"
+              finished_at: "2026-11-25T12:01:00Z"
 
     ReleaseView:
       x-assumed: [Q-11]

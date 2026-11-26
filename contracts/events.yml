@@ -89,7 +89,9 @@ $defs:
     x-assumed: [Q-13]
     description: >
       A run ended. One event for both outcomes, with `data.outcome` passed or failed (Q-13 default). Sent by
-      pipeline-runner. `occurred_at` is the run's `finished_at` (the last run step's `finished_at`).
+      pipeline-runner. `occurred_at` is the run's `finished_at`: the failed step's `finished_at` when a step
+      failed, otherwise the moment the fake upload ended, because the build is marked passed or failed only
+      after the upload (user decision, #120). Sent after that upload, never before it.
     allOf:
       - $ref: "#/$defs/Envelope"
       - type: object
@@ -114,6 +116,7 @@ $defs:
           pipeline_name: shipyard-api
           outcome: passed
           failed_step: null
+          failure_reason: null
           steps:
             - name: install
               status: passed
@@ -133,6 +136,7 @@ $defs:
           pipeline_name: shipyard-api
           outcome: failed
           failed_step: test
+          failure_reason: null
           steps:
             - name: install
               status: passed
@@ -274,14 +278,16 @@ $defs:
   BuildFinishedData:
     x-assumed: [Q-20]
     description: >
-      Payload of build.finished. The anyOf below is the state table the schema enforces: outcome passed means
-      `failed_step` is null and every step passed; outcome failed means `failed_step` is a step name and exactly
-      one step has status failed. Not checkable in JSON Schema, but required: `failed_step` is the `name` of that
-      failed step, the steps before it passed and the steps after it are skipped (the run stops at the first
-      failed step, Q-20 default).
+      Payload of build.finished. The anyOf below is the state table the schema enforces, with three rows:
+      outcome passed means `failed_step` and `failure_reason` are null and every step passed; outcome failed at
+      a step means `failed_step` is a step name, `failure_reason` is null and exactly one step has status
+      failed; outcome failed by the upload (user decision, #120) means `failed_step` is null, `failure_reason`
+      is `artifact upload failed` and every step passed. Not checkable in JSON Schema, but required:
+      `failed_step` is the `name` of that failed step, the steps before it passed and the steps after it are
+      skipped (the run stops at the first failed step, Q-20 default).
     type: object
     additionalProperties: false
-    required: [build_id, pipeline_name, outcome, failed_step, steps]
+    required: [build_id, pipeline_name, outcome, failed_step, failure_reason, steps]
     properties:
       build_id:
         $ref: "#/$defs/BuildId"
@@ -302,15 +308,24 @@ $defs:
               enum: [passed, failed, skipped]
       failed_step:
         x-assumed: [Q-20]
-        description: Name of the step that failed; null when the outcome is passed.
+        description: Name of the step that failed; null when the outcome is passed or the upload failed.
         anyOf:
           - $ref: "#/$defs/StepName"
+          - type: "null"
+      failure_reason:
+        description: >
+          Set only when the build failed without a failed step, that is when the fake upload failed (user
+          decision, #120); null otherwise.
+        anyOf:
+          - $ref: "#/$defs/FailureReason"
           - type: "null"
     anyOf:
       - properties:
           outcome:
             const: passed
           failed_step:
+            type: "null"
+          failure_reason:
             type: "null"
           steps:
             $ref: "#/$defs/PassedRunSteps"
@@ -319,13 +334,35 @@ $defs:
             const: failed
           failed_step:
             $ref: "#/$defs/StepName"
+          failure_reason:
+            type: "null"
           steps:
             $ref: "#/$defs/FailedRunSteps"
+      - properties:
+          outcome:
+            const: failed
+          failed_step:
+            type: "null"
+          failure_reason:
+            $ref: "#/$defs/FailureReason"
+          steps:
+            $ref: "#/$defs/PassedRunSteps"
     examples:
+      - build_id: 4b3a2c1d-0e9f-4a8b-b7c6-d5e4f3a2b111
+        pipeline_name: shipyard-api
+        outcome: failed
+        failed_step: null
+        failure_reason: artifact upload failed
+        steps:
+          - name: install
+            status: passed
+            started_at: "2026-11-25T12:00:00Z"
+            finished_at: "2026-11-25T12:01:00Z"
       - build_id: 9e8d7c6b-5a49-4382-a716-05f4e3d2c104
         pipeline_name: shipyard-api
         outcome: failed
         failed_step: test
+        failure_reason: null
         steps:
           - name: install
             status: passed
@@ -423,14 +460,25 @@ $defs:
 
   PipelineName:
     description: >
-      The `name` of the pipeline definition the run was started with (user decision, Q-19, #34). A passed
-      build uploads one fake artifact named after the pipeline (user decision, Q-34, #110), so this name is
-      also used as an ArtifactName. This schema is not restricted to the ArtifactName rule: what happens for a
-      pipeline name that is not a valid ArtifactName (for example one with a space or `/`, or longer than 100
-      characters) is open, issue #119.
+      The `name` of the pipeline definition the run was started with (user decision, Q-19, #34). Same rule as
+      ArtifactName, by reference (user decision, #119: "Pipeline names use the same rule as artifact names
+      (Q-29): letters, digits, . - _; starts with a letter or digit; 1-100 chars; case-sensitive. A bad name is
+      rejected with 422 when the pipeline is created. No slugifying."), so the fake artifact of a passed build,
+      named after the pipeline (user decision, Q-34, #110), always has a valid name. Must be rejected, for
+      example: `my pipeline` (space), `a/b` (slash), `-x` and `.x` (first character), the empty string, any
+      name of 101 characters, and a name followed by a newline.
+    $ref: "#/$defs/ArtifactName"
+    examples: [shipyard-api, Web_2.1, a, "0"]
+
+  FailureReason:
+    description: >
+      Why a build failed when no step failed. The only value is the one the user decided (user decision, #120:
+      "The fake upload runs after the last step passes and before the build is marked passed. If the upload
+      fails, the build is failed with reason "artifact upload failed". No retries in wave 2."). A build that
+      failed at a step has no reason (null; the step is in `failed_step`).
     type: string
-    minLength: 1
-    examples: [shipyard-api]
+    enum: [artifact upload failed]
+    examples: [artifact upload failed]
 
   StepName:
     description: The `name` of a step in the pipeline definition (user decision, Q-19, #34).
