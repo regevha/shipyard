@@ -381,3 +381,35 @@ def test_many_concurrent_requests_all_succeed_on_a_file_db(tmp_path: Path, fakes
                 )
             )
     assert codes == [201] * 150
+
+
+VALID_DECISION = b'{"decision":"approved","decided_by":"d"}'
+
+
+@pytest.mark.parametrize("media", ["text/plain", "application/x-www-form-urlencoded", None])
+def test_non_json_content_type_is_422_after_404(client: TestClient, media: str | None) -> None:
+    headers = {"content-type": media} if media else {"content-type": ""}
+    rid = make_release(client)["release_id"]
+    response = client.post(f"/releases/{rid}/decision", content=VALID_DECISION, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["location"] == "body"
+    assert client.get(f"/releases/{rid}").json()["status"] == "pending"
+    unknown = client.post(f"/releases/{UNKNOWN}/decision", content=VALID_DECISION, headers=headers)
+    assert unknown.status_code == 404
+    create = client.post(
+        "/releases",
+        content=b'{"artifact":{"name":"a","version":1},"requested_by":"s"}',
+        headers=headers,
+    )
+    assert create.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "media", ["application/json; charset=utf-8", "APPLICATION/JSON", "application/vnd.x+json"]
+)
+def test_json_content_types_with_parameters_are_accepted(client: TestClient, media: str) -> None:
+    rid = make_release(client)["release_id"]
+    response = client.post(
+        f"/releases/{rid}/decision", content=VALID_DECISION, headers={"content-type": media}
+    )
+    assert response.status_code == 200

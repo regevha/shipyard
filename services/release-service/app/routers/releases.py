@@ -58,6 +58,14 @@ async def decision_body(
 ) -> DecisionRequest:
     """Read and validate the body only after the release is known to exist. FastAPI parses a JSON
     body before any dependency runs, so an unknown id with a broken body would be 422, not 404."""
+    media_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        # The contract declares application/json only; a text/plain POST is a CORS simple request.
+        raise RequestValidationError(
+            [{"type": "json_invalid", "loc": ("body",), "msg": "body must be application/json"}]
+        )
     try:
         return DecisionRequest.model_validate_json(await request.body())
     except ValidationError as exc:
