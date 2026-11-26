@@ -1,0 +1,43 @@
+id: T017
+title: "Contracts: apply the user's decisions of 2026-11-26"
+owner: architect
+branch: T017-decisions-contracts
+mode: team
+ui: false
+wave: 1
+depends_on: [T012]
+migration: false
+issue: 116
+read_first:
+  - docs/PLAN.md#contract-file-format
+  - docs/OPEN_QUESTIONS.md  # Q-23 and Q-28..Q-34 only
+  - docs/tasks/T012.md
+  - contracts/events.yml
+  - contracts/errors.yml
+  - contracts/api-pipeline-runner.yml
+  - contracts/api-artifact-store.yml
+  - contracts/api-release-service.yml
+  - contracts/api-dashboard.yml
+files_touched:
+  - contracts/events.yml
+  - contracts/errors.yml
+  - contracts/api-pipeline-runner.yml
+  - contracts/api-artifact-store.yml
+  - contracts/api-release-service.yml
+  - contracts/api-dashboard.yml
+acceptance:
+  - "python3 scripts/ci/check_contracts.py  # exits 0"
+  - "python3 scripts/ci/check_contracts.py --self-test  # exits 0"
+  - '! grep -rnE ''x-assumed:.*\bQ-(23|28|30)\b'' contracts/  # exits 0; matches the list form x-assumed: [Q-15, Q-28]'
+  - "full reviewer finds no cross-file disagreement, including the runner/events/dashboard parity check (review gate, not a command)"
+summary: >
+  Apply the user's decisions of 2026-11-26 to the six contract files (docs/OPEN_QUESTIONS.md and docs/PLAN.md are
+  not touched; T018 owns them). Q-29: give the artifact name a pattern and maximum length in events.yml ArtifactName
+  and in api-artifact-store.yml, each with valid and invalid examples. Q-30: add requested_by to ReleaseRequest,
+  Release and ReleaseRequestedData, and to the dashboard ReleaseView if it carries the requester. Q-31: a second
+  promote returns 200 with the release unchanged and promoted_at keeps the time of the first promote. Q-32: the
+  who-calls-whom table in api-dashboard.yml states that decide and promote are called directly on release-service
+  and the dashboard has no write endpoint. Q-33 (fail rule) and Q-34 (upload) are described in
+  api-pipeline-runner.yml with the run shape unchanged, citing issues #107 and #110 (this also clears #112).
+  Remove the x-assumed markers for Q-23, Q-28 and Q-30 (drop the ID from a list, or the whole key when it is the
+  only ID); leave every other x-assumed marker as it is.
