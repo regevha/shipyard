@@ -1,0 +1,35 @@
+[project]
+name = "shipyard-stack-tests"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "httpx",
+    "pytest",
+    "pyyaml",
+    "jsonschema",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "types-jsonschema",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+files = ["tests"]
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
