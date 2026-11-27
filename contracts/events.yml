@@ -693,8 +693,8 @@ $defs:
   InterruptedRunSteps:
     description: >
       The steps of a run that an unexpected pipeline-runner error ended (user decision, Q-41, #167: a crash is
-      a failure, never a run left running): at least one step, each passed, failed or skipped, at most one
-      failed. The step that was running when the error happened, if any, is failed with `finished_at` set to
+      a failure; an unexpected error during a run marks the run failed with `internal error` and sends
+      build.finished): at least one step, each passed, failed or skipped, at most one failed. The step that was running when the error happened, if any, is failed with `finished_at` set to
       when the run was marked failed; steps not started are skipped; passed steps stay passed. With no failed
       step the error happened between steps, during the upload or while the final state was recorded. Not
       checkable in JSON Schema, but required: the passed steps come first, then the failed one if any, then

@@ -53,14 +53,19 @@ summary: >
   422. test_q42_stopped_dashboard_does_not_delay_service[release-service|artifact-store|pipeline-runner] (Q-42,
   #171): stop the dashboard process with SIGSTOP (its pid file; a stopped process keeps its listening socket, so
   connections are accepted and never answered), send 80 concurrent writes to the service (POST /releases, uploads,
-  POST /runs), then while their events are pending one unrelated GET on that service must answer within 1.0 s;
-  always SIGCONT the dashboard in a finally block and wait until it answers again, so later tests see a working
+  POST /runs), then while their events are pending one unrelated GET on that service must answer within 1.0 s
+  (release-service, artifact-store). pipeline-runner differs: its simulated steps and upload still run on the
+  handler thread pool until wave 3 (the project owner, 2026-11-27, Q-42 follow-up), so 80 runs can delay a GET
+  whatever the dashboard does. Its case first measures a baseline: the same 80 POST /runs and the same GET,
+  timed at the same point, with the dashboard running; then, with the dashboard stopped, the GET must answer
+  within baseline + 1.0 s. Record both times (baseline and stopped) in the hand-off. Always SIGCONT the dashboard in a finally block and wait until it answers again, so later tests see a working
   dashboard; events sent while it was stopped may be lost (dropped after the 5 s deadline). Order these tests so
   they cannot disturb the others, as conftest.py already does for stops_artifact_store. #167 (Q-41) cannot be
   provoked from outside a service; it is covered by T033's unit tests, not here. Run the concurrency suite three
   times (the running-with-a-failed-step flake found in T029 must be gone after T033). Update docs/DEMO.md
   § Known limitations: drop the #170 line; #171 becomes "a dashboard that hangs loses the events sent meanwhile
   (dropped after 5 s, no queue until wave 3)" with no delay to other requests; add that an unexpected runner error
-  fails the build with reason internal error (#167); #163 stays, now marked wave 3 (Q-39). The walkthrough block
+  fails the build with reason internal error (#167); #163 stays, now marked wave 3 (Q-39); add that pipeline-runner's simulated steps and upload can still delay
+  its other requests under load until wave 3 (Q-42 follow-up). The walkthrough block
   must still run. If a stack test finds a defect in a service, report it to the lead with the failing test; never
   fix service code here. Hand-off docs/tasks/T034.md.

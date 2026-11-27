@@ -46,8 +46,7 @@ info:
     non-201 answer, a network error or a timeout, or while recording the final state) marks the run `failed`
     with `failed_step` null and `failure_reason` `internal error` (events.yml FailureReason, InterruptedRunSteps:
     the step that was running is failed, steps not started are skipped), and then `build.finished` (outcome
-    failed, same fields) is sent. A run is never left `running` because of such an error. A run that already
-    reached a final state keeps it.
+    failed, same fields) is sent. A run that already reached a final state keeps it.
 
 
     Naming: one run is one build. Its ID is `build_id` in every file (events, artifact uploads, dashboard); the

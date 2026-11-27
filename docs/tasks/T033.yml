@@ -35,7 +35,7 @@ acceptance:
   - |-
     cd services/pipeline-runner && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
   - |-
-    cd services/pipeline-runner && uv run pytest -q "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[step]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[upload]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[finish]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[before-first-step]" tests/test_runner_internal_error.py::test_q41_http_upload_failure_keeps_upload_reason tests/test_runner_internal_error.py::test_q41_mark_failed_write_is_retried tests/test_runner_internal_error.py::test_q41_final_state_already_committed_is_kept tests/test_runner_internal_error.py::test_every_intermediate_run_state_matches_contract  # exits 0
+    cd services/pipeline-runner && uv run pytest -q "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[step]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[upload]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[finish]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[before-first-step]" tests/test_runner_internal_error.py::test_q41_http_upload_failure_keeps_upload_reason tests/test_runner_internal_error.py::test_q41_final_state_already_committed_is_kept tests/test_runner_internal_error.py::test_every_intermediate_run_state_matches_contract  # exits 0
   - |-
     cd services/pipeline-runner && uv run pytest -q tests/test_runner_event_deadline.py::test_q42_hanging_dashboard_does_not_delay_other_requests tests/test_runner_event_deadline.py::test_q42_event_dropped_at_deadline tests/test_runner_event_deadline.py::test_q42_retry_keeps_event_id_within_deadline tests/test_runner_event_deadline.py::test_q42_pending_events_are_capped tests/test_runner_event_deadline.py::test_q42_shutdown_cancels_pending_sends tests/test_runner_event_deadline.py::test_q42_runner_does_not_wait_for_event_delivery  # exits 0
   - |-
@@ -58,9 +58,9 @@ summary: >
   passed steps kept (events.yml InterruptedRunSteps); then build.finished with the same fields, validated in the
   tests against events.yml BuildFinished. A non-201 answer, an httpx error or a timeout of the upload stays
   "artifact upload failed" (T024 today also maps any other exception there to the upload reason; that part
-  changes). The mark-failed write uses a fresh session and is retried up to 3 times (waits 0.1 s and 0.2 s, for
-  SQLite "database is locked"); if it still fails, log at ERROR with the build_id (the run then stays running;
-  name this residual in the hand-off). A run whose final state is already committed keeps it. The parametrized
+  changes). The mark-failed write uses a fresh session. Out of scope: the case where that write itself fails
+  (the project owner, 2026-11-27: rare cases are ignored until the end of wave 3, Q-41 follow-up); no retry
+  logic, no test and no hand-off note for it. A run whose final state is already committed keeps it. The parametrized
   test injects the error at each stage (ids step, upload, finish, before-first-step) and asserts the run is never
   left running, GET /runs/{build_id} validates against the contract's Run, and build.finished was sent once.
   (2) One transaction (found in T029: under load a poll of GET /runs saw status running with a failed step, which
@@ -83,7 +83,8 @@ summary: >
   POST /runs (each 202), then, while their events are still pending, one GET /runs/{build_id} that must answer
   within 1.0 s; record the time on the unfixed code in the hand-off as "unfixed: <n> s". The test also asserts, through a test hook on the sender that reports the number of pending sends, that at least one event is still
   pending at the moment the GET is timed, so the GET is measured while the dashboard is hanging. Out of scope (do not
-  change): simulated steps and the upload still run in the worker thread (open question 1 in docs/tasks/T029.md § Open questions). Update the
+  change): simulated steps and the upload still run in the worker thread (the project owner, 2026-11-27: wave 3,
+  with the queue; Q-42 follow-up). Update the
   existing tests (tests/test_runner_execution.py, tests/conftest.py, tests/test_main.py) without weakening what
   they prove; tests/test_main.py must stop posting to a real $DASHBOARD_URL (#167 review note). No new package.
   Never edit the T022 copies. Update DATA_MODEL.md if a column changes. Hand-off docs/tasks/T033.md.

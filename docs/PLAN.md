@@ -100,7 +100,9 @@ Q-27).** First a real event queue replacing the HTTP event calls (the contracts 
 (including the upload retries and cleanup left open by #120 and Q-37) and persistence (a real database with
 versioned migrations, Q-03); then end-to-end browser tests (e2e-tester). Also in wave 3: login (what it covers,
 people, services (Q-09) or both, is settled when wave 3 is planned), request size limits (#163, Q-39) and a second
-look at dashboard buttons (Q-32). Not in wave 3: the React dashboard (a later wave). No task specs until wave 3 is
+look at dashboard buttons (Q-32). With the queue, pipeline-runner's simulated steps and its upload move off the
+request-handler thread pool (the project owner, 2026-11-27, Q-42 follow-up; until then they can delay other
+requests to the runner under load). Not in wave 3: the React dashboard (a later wave). No task specs until wave 3 is
 planned.
 
 ## Contract file format

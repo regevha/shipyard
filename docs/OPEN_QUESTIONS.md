@@ -522,6 +522,24 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 
   > #167: (b), mark it failed in code. A crash is a failure, and a stuck "running" build is a real bug. Change the contract only if the failed state cannot carry a reason.
 
+- **Follow-up: the write that marks the run failed fails too (T029 open question 2, reviewer B1 on T029).** T033
+  writes the failed state in a fresh session and retries it up to 3 times; the question was what happens if all
+  three fail (for example the database is gone). Options: accept the rare case and name it in the contract; keep
+  retrying in the background with a limit; or a startup or read-time check that fails runs stuck `running`.
+  **Answered by the project owner (2026-11-27, Asia/Jerusalem, in the lead session, through the lead's
+  multiple-choice question):**
+
+  > Accept the rare case
+
+  **Then superseded by the project owner (2026-11-27 09:44 Asia/Jerusalem, in the lead session):**
+
+  > Rare cases should be ignored until end of wave 3
+
+  So the case is ignored until the end of wave 3. Applied in T029: `api-pipeline-runner.yml` (the Unexpected
+  errors paragraph of its info) and `events.yml#/$defs/InterruptedRunSteps` state the behaviour (an unexpected
+  error during a run marks it failed with `internal error` and sends build.finished) with no absolute promise
+  that a run is never left `running` and no clause for this case. T033 has no retry, test or hand-off note for it.
+
 ### Q-42 Event senders blocked by a hanging dashboard
 - **Point (issue #171, T026 review):** pipeline-runner, artifact-store and release-service send events with a
   synchronous client from background tasks on the handler thread pool. A dashboard that accepts connections and
@@ -538,6 +556,19 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   session; recorded by the lead on #171):**
 
   > #171: (a), fix now. A deadline on the dashboard's outbound calls is a small change, and it still helps after the queue arrives.
+
+- **Follow-up: the runner's simulated steps and its upload (T029 open question 1).** These still run on the
+  request-handler thread pool (the `time.sleep` of each simulated step, and the upload to artifact-store with up
+  to 10 s per httpx phase, #132), so under load they can delay unrelated requests to the runner. The decision
+  above covers only the calls to the dashboard. Options: fix it in the wave 2 follow-ups (a new task after T033),
+  or leave it to wave 3, where the queue and real steps change this code anyway. **Answered by the project owner
+  (2026-11-27, Asia/Jerusalem, in the lead session, through the lead's multiple-choice question):**
+
+  > Wave 3, with the queue
+
+  Applied in T029: written into the wave 3 outline of `docs/PLAN.md` § Waves; T033 leaves this code as it is, and
+  T034's pipeline-runner stopped-dashboard test measures against a baseline taken with the dashboard running, so
+  this delay cannot fail it.
 
 ### Q-43 Wave 3 scope
 - **Point:** Q-27 outlined wave 3 as the queue, auth, retries, persistence and e2e flows, with a React dashboard
