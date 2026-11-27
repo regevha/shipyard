@@ -458,7 +458,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   artifacts of failed builds.
 - **Status:** `answered-by-user` (2026-11-26, issue #131): option (a). T023, T024, T025, T027 and T028 carried
   `assumed (#131)`, which now stands as the decision. Retries and cleanup are wave 3.
-- **User decision (2026-11-26 21:41 Asia/Jerusalem, #131, comment by Nir; the reply was the letter of the option):**
+- **User decision (Nir's reply to the lead session, 2026-11-26 21:41 Asia/Jerusalem, recorded by the lead on #131):**
 
   > a
 
@@ -467,7 +467,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   (`docs/tasks/T021.md`). Config holds it in each service's `pyproject.toml` (`[tool.coverage.report]`).
 - **Status:** `answered-by-user` (2026-11-26 21:28 Asia/Jerusalem, source: the lead session chat, not GitHub): the lead
   said it would treat 85 as the starting value unless the user wanted another number, and the user replied with the
-  single word below.
+  single word below. GitHub: the lead's comment on PR #151 (T021) does not mention the threshold; the wording is not on
+  GitHub.
 - **User decision (2026-11-26 21:28 Asia/Jerusalem, lead session chat):**
 
   > ok
