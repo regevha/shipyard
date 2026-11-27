@@ -38,7 +38,8 @@ paths:
       summary: Request a release of one artifact version
       description: >
         Creates a release with status `pending`, records `requested_by` as sent and sets `requested_at`, and
-        answers 201.
+        answers 201. An `artifact.version` below 1 or above 9223372036854775807 (2^63-1, user decision, Q-40,
+        #170; events.yml ArtifactVersion) is 422 validation_failed and nothing is stored.
       requestBody:
         required: true
         content:
@@ -404,6 +405,15 @@ components:
                   details:
                     - location: body.decision
                       message: must be one of approved, rejected
+            version-too-large:
+              summary: A version above 2^63-1 (user decision, Q-40, #170)
+              value:
+                error:
+                  code: validation_failed
+                  message: request validation failed
+                  details:
+                    - location: body.artifact.version
+                      message: must be at most 9223372036854775807
     InternalError:
       description: Unexpected server error (internal_error).
       content:

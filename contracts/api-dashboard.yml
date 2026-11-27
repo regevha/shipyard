@@ -64,7 +64,10 @@ paths:
       description: >
         The body is any one event of events.yml (its root schema). A body that is not exactly one valid event,
         including an unknown `type`, a `source` that does not match the type, or an unknown field, is 422
-        validation_failed. A repeated `event_id` is 202 and changes nothing, even when the repeated body differs
+        validation_failed. An artifact `version` above 9223372036854775807 (2^63-1) breaks events.yml
+        ArtifactVersion and is 422 validation_failed like any other invalid event (user decision, Q-40, #170).
+        A build.finished with `failure_reason` `internal error` (user decision, Q-41, #167) is a valid event.
+        A repeated `event_id` is 202 and changes nothing, even when the repeated body differs
         from the first one: the first accepted body wins and later ones are ignored (Q-11 default).
       requestBody:
         required: true
@@ -339,7 +342,9 @@ components:
         `failure_reason` are null and `steps` is events.yml PassedRunSteps; failed at a step means
         `finished_at` and `failed_step` are set, `failure_reason` is null and `steps` is events.yml
         FailedRunSteps; failed by the upload (user decision, #120) means `finished_at` is set, `failed_step` is
-        null, `failure_reason` is `artifact upload failed` and `steps` is PassedRunSteps. These are the same
+        null, `failure_reason` is `artifact upload failed` and `steps` is PassedRunSteps; failed by an internal
+        runner error (user decision, Q-41, #167) means `finished_at` is set, `failed_step` is null,
+        `failure_reason` is `internal error` and `steps` is events.yml InterruptedRunSteps. These are the same
         rows and schemas build.finished and pipeline-runner's Run use, so all three accept the same finished
         builds. Because the fake upload comes before build.finished (user decision, #120), artifact.uploaded can
         arrive before build.finished for the same build; the dashboard orders by `occurred_at` as for any
@@ -416,9 +421,20 @@ components:
             failed_step:
               type: "null"
             failure_reason:
-              $ref: "events.yml#/$defs/FailureReason"
+              const: artifact upload failed
             steps:
               $ref: "events.yml#/$defs/PassedRunSteps"
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            failure_reason:
+              const: internal error
+            steps:
+              $ref: "events.yml#/$defs/InterruptedRunSteps"
       examples:
         - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
@@ -440,6 +456,26 @@ components:
               status: passed
               started_at: "2026-11-25T12:00:00Z"
               finished_at: "2026-11-25T12:01:00Z"
+        - build_id: 2c4e6a8b-1d3f-4b5a-9c7e-0f2a4c6e8b12
+          pipeline_name: shipyard-api
+          status: failed
+          started_at: "2026-11-25T13:00:00Z"
+          finished_at: "2026-11-25T13:01:07Z"
+          failed_step: null
+          failure_reason: internal error
+          steps:
+            - name: install
+              status: passed
+              started_at: "2026-11-25T13:00:00Z"
+              finished_at: "2026-11-25T13:01:00Z"
+            - name: test
+              status: failed
+              started_at: "2026-11-25T13:01:00Z"
+              finished_at: "2026-11-25T13:01:07Z"
+            - name: package
+              status: skipped
+              started_at: null
+              finished_at: null
 
     ReleaseView:
       x-assumed: [Q-11]

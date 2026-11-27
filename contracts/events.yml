@@ -91,7 +91,9 @@ $defs:
       A run ended. One event for both outcomes, with `data.outcome` passed or failed (Q-13 default). Sent by
       pipeline-runner. `occurred_at` is the run's `finished_at`: the failed step's `finished_at` when a step
       failed, otherwise the moment the fake upload ended, because the build is marked passed or failed only
-      after the upload (user decision, #120). Sent after that upload, never before it.
+      after the upload (user decision, #120). Sent after that upload, never before it. When an unexpected
+      runner error ends the run (`failure_reason` `internal error`, user decision, Q-41, #167), `occurred_at` is
+      when the run was marked failed, and build.started may be missing if the error came before the first step.
     allOf:
       - $ref: "#/$defs/Envelope"
       - type: object
@@ -146,6 +148,30 @@ $defs:
               status: failed
               started_at: "2026-11-25T11:01:10Z"
               finished_at: "2026-11-25T11:02:05Z"
+            - name: package
+              status: skipped
+              started_at: null
+              finished_at: null
+      - event_id: 5b7d9f1a-3c5e-4a7b-8d9f-1a3c5e7b9d13
+        type: build.finished
+        schema_version: 1
+        occurred_at: "2026-11-25T13:01:07Z"
+        source: pipeline-runner
+        data:
+          build_id: 2c4e6a8b-1d3f-4b5a-9c7e-0f2a4c6e8b12
+          pipeline_name: shipyard-api
+          outcome: failed
+          failed_step: null
+          failure_reason: internal error
+          steps:
+            - name: install
+              status: passed
+              started_at: "2026-11-25T13:00:00Z"
+              finished_at: "2026-11-25T13:01:00Z"
+            - name: test
+              status: failed
+              started_at: "2026-11-25T13:01:00Z"
+              finished_at: "2026-11-25T13:01:07Z"
             - name: package
               status: skipped
               started_at: null
@@ -278,13 +304,17 @@ $defs:
   BuildFinishedData:
     x-assumed: [Q-20]
     description: >
-      Payload of build.finished. The anyOf below is the state table the schema enforces, with three rows:
+      Payload of build.finished. The anyOf below is the state table the schema enforces, with four rows:
       outcome passed means `failed_step` and `failure_reason` are null and every step passed; outcome failed at
       a step means `failed_step` is a step name, `failure_reason` is null and exactly one step has status
       failed; outcome failed by the upload (user decision, #120) means `failed_step` is null, `failure_reason`
-      is `artifact upload failed` and every step passed. Not checkable in JSON Schema, but required:
-      `failed_step` is the `name` of that failed step, the steps before it passed and the steps after it are
-      skipped (the run stops at the first failed step, Q-20 default).
+      is `artifact upload failed` and every step passed; outcome failed by an internal error (user decision,
+      Q-41, #167) means `failed_step` is null, `failure_reason` is `internal error` and `steps` is
+      InterruptedRunSteps (at most one step failed: the one that was running when the error happened). Not
+      checkable in JSON Schema, but required: `failed_step` is the `name` of that failed step, the steps before
+      it passed and the steps after it are skipped (the run stops at the first failed step, Q-20 default); in
+      the internal-error row the same order holds around the failed step, or, without one, the passed steps
+      come first and the skipped steps after them.
     type: object
     additionalProperties: false
     required: [build_id, pipeline_name, outcome, failed_step, failure_reason, steps]
@@ -308,15 +338,18 @@ $defs:
               enum: [passed, failed, skipped]
       failed_step:
         x-assumed: [Q-20]
-        description: Name of the step that failed; null when the outcome is passed or the upload failed.
+        description: >
+          Name of the step that failed by its own result; null when the outcome is passed, the upload failed or
+          an internal error ended the run.
         anyOf:
           - $ref: "#/$defs/StepName"
           - type: "null"
       failure_reason:
         description: >
-          Set only when the build failed without a failed step, that is when the fake upload failed (user
-          decision, #120); null otherwise. The reason text is the user's; the field name, its required and
-          nullable shape and the FailureReason enum are the contract's choice.
+          Set only when the build failed without a step failing by its own result: `artifact upload failed`
+          when the fake upload failed (user decision, #120), `internal error` when pipeline-runner hit an
+          unexpected error (user decision, Q-41, #167); null otherwise. The upload reason text is the user's;
+          the field name, its required and nullable shape and the FailureReason enum are the contract's choice.
         anyOf:
           - $ref: "#/$defs/FailureReason"
           - type: "null"
@@ -345,9 +378,18 @@ $defs:
           failed_step:
             type: "null"
           failure_reason:
-            $ref: "#/$defs/FailureReason"
+            const: artifact upload failed
           steps:
             $ref: "#/$defs/PassedRunSteps"
+      - properties:
+          outcome:
+            const: failed
+          failed_step:
+            type: "null"
+          failure_reason:
+            const: internal error
+          steps:
+            $ref: "#/$defs/InterruptedRunSteps"
     examples:
       - build_id: 4b3a2c1d-0e9f-4a8b-b7c6-d5e4f3a2b111
         pipeline_name: shipyard-api
@@ -373,6 +415,24 @@ $defs:
             status: failed
             started_at: "2026-11-25T11:01:10Z"
             finished_at: "2026-11-25T11:02:05Z"
+          - name: package
+            status: skipped
+            started_at: null
+            finished_at: null
+      - build_id: 2c4e6a8b-1d3f-4b5a-9c7e-0f2a4c6e8b12
+        pipeline_name: shipyard-api
+        outcome: failed
+        failed_step: null
+        failure_reason: internal error
+        steps:
+          - name: install
+            status: passed
+            started_at: "2026-11-25T13:00:00Z"
+            finished_at: "2026-11-25T13:01:00Z"
+          - name: test
+            status: failed
+            started_at: "2026-11-25T13:01:00Z"
+            finished_at: "2026-11-25T13:01:07Z"
           - name: package
             status: skipped
             started_at: null
@@ -478,15 +538,21 @@ $defs:
 
   FailureReason:
     description: >
-      Why a build failed when no step failed. The only value is the one the user decided (user decision, #120:
-      "The fake upload runs after the last step passes and before the build is marked passed. If the upload
-      fails, the build is failed with reason "artifact upload failed". No retries in wave 2."). A build that
-      failed at a step has no reason (null; the step is in `failed_step`). The reason text is the user's; the
-      field name `failure_reason`, its required-and-nullable shape in Run, BuildFinishedData and BuildView, and
-      this one-value enum are the contract's choice, not part of the decision.
+      Why a build failed when no step failed by its own result. Two values. `artifact upload failed` is the
+      user's (user decision, #120: "The fake upload runs after the last step passes and before the build is
+      marked passed. If the upload fails, the build is failed with reason "artifact upload failed". No retries
+      in wave 2."). `internal error` follows the user decision on #167 (Q-41: an unexpected runner error marks
+      the build failed, and the contract changes only if the failed state cannot carry a reason; with
+      `artifact upload failed` as the only value it could not): pipeline-runner hit an unexpected error of its
+      own at any stage (a step, the upload other than a non-201 answer, a network error or a timeout, or
+      recording the final state). The text `internal error` is the contract's choice, after the
+      `internal_error` error code of errors.yml: it names the runner as the cause and carries no exception
+      text. A build that failed at a step has no reason (null; the step is in `failed_step`). The field name
+      `failure_reason`, its required-and-nullable shape in Run, BuildFinishedData and BuildView, and this enum
+      are the contract's choice, not part of either decision.
     type: string
-    enum: [artifact upload failed]
-    examples: [artifact upload failed]
+    enum: [artifact upload failed, internal error]
+    examples: [artifact upload failed, internal error]
 
   StepName:
     description: The `name` of a step in the pipeline definition (user decision, Q-19, #34).
@@ -624,6 +690,47 @@ $defs:
           started_at: null
           finished_at: null
 
+  InterruptedRunSteps:
+    description: >
+      The steps of a run that an unexpected pipeline-runner error ended (user decision, Q-41, #167: a crash is
+      a failure; an unexpected error during a run marks the run failed with `internal error` and sends
+      build.finished): at least one step, each passed, failed or skipped, at most one failed. The step that was running when the error happened, if any, is failed with `finished_at` set to
+      when the run was marked failed; steps not started are skipped; passed steps stay passed. With no failed
+      step the error happened between steps, during the upload or while the final state was recorded. Not
+      checkable in JSON Schema, but required: the passed steps come first, then the failed one if any, then
+      the skipped ones. The single definition used by BuildFinishedData, Run and BuildView.
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/StepResult"
+      properties:
+        status:
+          enum: [passed, failed, skipped]
+    contains:
+      required: [status]
+      properties:
+        status:
+          const: failed
+    minContains: 0
+    maxContains: 1
+    examples:
+      - - name: install
+          status: passed
+          started_at: "2026-11-25T13:00:00Z"
+          finished_at: "2026-11-25T13:01:00Z"
+        - name: test
+          status: failed
+          started_at: "2026-11-25T13:01:00Z"
+          finished_at: "2026-11-25T13:01:07Z"
+        - name: package
+          status: skipped
+          started_at: null
+          finished_at: null
+      - - name: install
+          status: passed
+          started_at: "2026-11-25T13:00:00Z"
+          finished_at: "2026-11-25T13:01:00Z"
+
   ArtifactName:
     description: >
       Artifact name as chosen by the uploader; used as the `{name}` path segment in artifact-store (user
@@ -643,10 +750,16 @@ $defs:
     examples: [shipyard-api, Web_2.1, a, "0"]
 
   ArtifactVersion:
-    description: Integer version assigned by artifact-store per artifact name, starting at 1 (user decision, Q-17, #33).
+    description: >
+      Integer version assigned by artifact-store per artifact name, starting at 1 (user decision, Q-17, #33),
+      and at most 2^63-1 = 9223372036854775807 (user decision, Q-40, #170: cap versions in the contract). Every
+      operation that receives a version (artifact-store's `{version}` path parameter, release-service's request
+      body, the dashboard's `POST /events`) answers a larger value with 422 validation_failed; artifact-store
+      never assigns one.
     type: integer
     minimum: 1
-    examples: [3]
+    maximum: 9223372036854775807
+    examples: [3, 9223372036854775807]
 
   Checksum:
     description: >

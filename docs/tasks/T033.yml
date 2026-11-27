@@ -1,0 +1,90 @@
+id: T033
+title: "Wave 2 follow-up F2 pipeline-runner: unexpected errors fail the run with internal error (#167), one-transaction finish, event sender with a 5 s deadline (#171)"
+owner: backend-dev
+branch: T033-runner-internal-error-deadline
+mode: team
+ui: false
+wave: 2
+depends_on: [T029, T030]
+migration: false
+read_first:
+  - docs/PLAN.md#waves
+  - docs/PLAN.md#conventions
+  - docs/OPEN_QUESTIONS.md#q-41-an-unexpected-error-in-a-runs-background-task
+  - docs/OPEN_QUESTIONS.md#q-42-event-senders-blocked-by-a-hanging-dashboard
+  - contracts/api-pipeline-runner.yml
+  - contracts/events.yml#/$defs/BuildFinishedData
+  - contracts/events.yml#/$defs/FailureReason
+  - contracts/events.yml#/$defs/InterruptedRunSteps
+  - docs/tasks/T024.md
+  - docs/tasks/T029.md
+  - docs/tasks/T030.md
+files_touched:
+  - services/pipeline-runner/app/main.py
+  - services/pipeline-runner/app/models.py
+  - services/pipeline-runner/app/core/**
+  - services/pipeline-runner/app/repos/**
+  - services/pipeline-runner/app/routers/**
+  - services/pipeline-runner/tests/conftest.py
+  - services/pipeline-runner/tests/test_main.py
+  - services/pipeline-runner/tests/test_runner_*.py
+  - services/pipeline-runner/DATA_MODEL.md
+acceptance:
+  - |-
+    cd services/pipeline-runner && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing  # exits 0, coverage at or above fail_under
+  - |-
+    cd services/pipeline-runner && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
+  - |-
+    cd services/pipeline-runner && uv run pytest -q "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[step]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[upload]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[finish]" "tests/test_runner_internal_error.py::test_q41_unexpected_error_fails_run_and_sends_build_finished[before-first-step]" tests/test_runner_internal_error.py::test_q41_http_upload_failure_keeps_upload_reason tests/test_runner_internal_error.py::test_q41_final_state_already_committed_is_kept tests/test_runner_internal_error.py::test_every_intermediate_run_state_matches_contract  # exits 0
+  - |-
+    cd services/pipeline-runner && uv run pytest -q tests/test_runner_event_deadline.py::test_q42_hanging_dashboard_does_not_delay_other_requests tests/test_runner_event_deadline.py::test_q42_event_dropped_at_deadline tests/test_runner_event_deadline.py::test_q42_retry_keeps_event_id_within_deadline tests/test_runner_event_deadline.py::test_q42_pending_events_are_capped tests/test_runner_event_deadline.py::test_q42_shutdown_cancels_pending_sends tests/test_runner_event_deadline.py::test_q42_runner_does_not_wait_for_event_delivery  # exits 0
+  - |-
+    git diff --quiet origin/main -- services/pipeline-runner/pyproject.toml services/pipeline-runner/uv.lock && python3 scripts/ci/check_shared_copy.py  # exits 0: no new package, T022 copies untouched
+  - |-
+    grep -qiE 'unfixed.*[0-9.]+ ?s' docs/tasks/T033.md && grep -qi 'internal error' docs/tasks/T033.md  # exits 0
+  - |-
+    python3 scripts/ci/check_task_scope.py T033-runner-internal-error-deadline origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head (stack job included)
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Group F2 of the wave 2 follow-ups; runs alone after T030 is merged (the dashboard must accept the new
+  build.finished row before the runner sends it). No contract change here (contracts frozen; do not add a Run
+  example). (1) Q-41, #167 (the project owner, 2026-11-27, option (b): mark it failed in code; exact words
+  in Q-41): any exception in a run's background task that the contract does not
+  already map (in a step, before the first step, in the upload other than a non-201 answer, an httpx error or a
+  timeout, or while recording the final state) marks the run failed: finished_at now, failed_step null,
+  failure_reason "internal error", the step that was running failed with finished_at now, pending steps skipped,
+  passed steps kept (events.yml InterruptedRunSteps); then build.finished with the same fields, validated in the
+  tests against events.yml BuildFinished. A non-201 answer, an httpx error or a timeout of the upload stays
+  "artifact upload failed" (T024 today also maps any other exception there to the upload reason; that part
+  changes). The mark-failed write uses a fresh session. Out of scope: the case where that write itself fails
+  (the project owner, 2026-11-27: rare cases are ignored until the end of wave 3, Q-41 follow-up); no retry
+  logic, no test and no hand-off note for it. A run whose final state is already committed keeps it. The parametrized
+  test injects the error at each stage (ids step, upload, finish, before-first-step) and asserts the run is never
+  left running, GET /runs/{build_id} validates against the contract's Run, and build.finished was sent once.
+  (2) One transaction (found in T029: under load a poll of GET /runs saw status running with a failed step, which
+  the contract's running row forbids; T028's concurrency stack test failed once in four runs on it): a failed
+  step, the skipping of the later steps and the run's final state are committed together, and so are the last
+  step's result and the upload-ended final state where they coincide; test_every_intermediate_run_state_matches_contract
+  reads the run after every repo write (a hook or a wrapping repo) for a passed run, a failed-step run, an
+  upload-failed run and an internal-error run, and validates each snapshot against the contract's Run. (3) Q-42,
+  #171 (the project owner, 2026-11-27: fix now): build.started and build.finished go through the new event-sender
+  convention in docs/PLAN.md § Conventions exactly (5 s total deadline, attempt timeout min(2 s, time left), waits
+  0.5 s then 1 s, same event_id, retry on network error, timeout or 5xx, one httpx.AsyncClient per app closed in
+  the lifespan, each send its own asyncio task on the server's event loop, never on the handler thread pool, at
+  most 1000 pending, cancelled within 1 s at shutdown). The runner's background work runs in a worker thread
+  today: it hands each event to the loop (for example asyncio.run_coroutine_threadsafe or
+  loop.call_soon_threadsafe) and never waits for delivery (test_q42_runner_does_not_wait_for_event_delivery: with a
+  dashboard that never answers, a run with PIPELINE_RUNNER_STEP_SECONDS=0 reaches its final state in under 1 s).
+  test_q42_hanging_dashboard_does_not_delay_other_requests runs the real app with uvicorn in a background thread on
+  a free 127.0.0.1 port, DASHBOARD_URL at a local listener that accepts connections and never answers,
+  ARTIFACT_STORE_URL at a closed local port (uploads fail fast), PIPELINE_RUNNER_STEP_SECONDS=0; 80 concurrent
+  POST /runs (each 202), then, while their events are still pending, one GET /runs/{build_id} that must answer
+  within 1.0 s; record the time on the unfixed code in the hand-off as "unfixed: <n> s". The test also asserts, through a test hook on the sender that reports the number of pending sends, that at least one event is still
+  pending at the moment the GET is timed, so the GET is measured while the dashboard is hanging. Out of scope (do not
+  change): simulated steps and the upload still run in the worker thread (the project owner, 2026-11-27: wave 3,
+  with the queue; Q-42 follow-up). Update the
+  existing tests (tests/test_runner_execution.py, tests/conftest.py, tests/test_main.py) without weakening what
+  they prove; tests/test_main.py must stop posting to a real $DASHBOARD_URL (#167 review note). No new package.
+  Never edit the T022 copies. Update DATA_MODEL.md if a column changes. Hand-off docs/tasks/T033.md.

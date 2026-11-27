@@ -1,0 +1,193 @@
+id: T029
+title: "Wave 2 follow-ups spec: the project owner's 2026-11-27 decisions (Q-39..Q-43), contract changes #170 and #167, wave 3 outline, specs T030-T034"
+owner: architect
+branch: spec-T029-followups
+mode: team
+ui: false
+wave: 2
+depends_on: [T028]
+migration: false
+read_first:
+  - .claude/agents/architect.md
+  - docs/PLAN.md#waves
+  - docs/PLAN.md#conventions
+  - docs/PLAN.md#tasks
+  - docs/PLAN.md#contract-change-requests
+  - docs/OPEN_QUESTIONS.md#q-27-what-waves-2-and-3-contain
+  - docs/OPEN_QUESTIONS.md#q-36-when-the-fake-artifact-is-uploaded-and-a-failed-upload
+  - docs/OPEN_QUESTIONS.md#q-37-a-failed-build-can-still-leave-a-stored-artifact
+  - docs/OPEN_QUESTIONS.md#q-38-coverage-threshold-per-service
+  - docs/STATUS.md
+  - docs/tasks/README.md
+  - docs/tasks/T020.yml
+  - docs/team/environment.md#wave-2-setup-t019-approved
+  - docs/team/shipyard-overrides.md
+  - docs/tasks/T023.md
+  - docs/tasks/T024.md
+  - docs/tasks/T025.md
+  - docs/tasks/T026.md
+  - contracts/events.yml
+  - contracts/errors.yml
+  - contracts/api-pipeline-runner.yml
+  - contracts/api-artifact-store.yml
+  - contracts/api-release-service.yml
+  - contracts/api-dashboard.yml
+files_touched:
+  - contracts/events.yml
+  - contracts/api-pipeline-runner.yml
+  - contracts/api-artifact-store.yml
+  - contracts/api-release-service.yml
+  - contracts/api-dashboard.yml
+  - docs/OPEN_QUESTIONS.md
+  - docs/PLAN.md
+  - docs/tasks/T029.yml
+  - docs/tasks/T030.yml
+  - docs/tasks/T031.yml
+  - docs/tasks/T032.yml
+  - docs/tasks/T033.yml
+  - docs/tasks/T034.yml
+acceptance:
+  - |-
+    python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('docs/tasks/*.yml')]; print('ok')"  # prints ok
+  - |-
+    python3 -c "
+    import yaml
+    req = {'id','title','owner','branch','mode','ui','wave','depends_on','migration','read_first','files_touched','acceptance','summary'}
+    for n in range(29, 35):
+        t = f'T0{n}'; d = yaml.safe_load(open(f'docs/tasks/{t}.yml'))
+        assert d['id'] == t and req <= set(d), (t, req - set(d))
+        assert 'issue' not in d, t
+        assert d['branch'].startswith(t + '-') or d['branch'] == 'spec-T029-followups', t
+        assert d['wave'] == 2 and d['migration'] is False and d['ui'] is False, t
+        assert all(x.startswith('T') and int(x[1:]) < n for x in d['depends_on']), t
+        assert n == 29 or 'T029' in d['depends_on'], t
+    print('specs ok')"  # prints specs ok
+  - |-
+    python3 -B -c "
+    import itertools, re, sys, yaml
+    sys.path.insert(0, 'scripts/ci'); from check_task_scope import matches
+    names = ['pipeline-runner', 'artifact-store', 'release-service', 'dashboard', 'x']
+    def instances(p):
+        parts = re.split(r'(\*\*|\*)', p)
+        slots = [names if x == '*' else ['x/y', 'x'] if x == '**' else [x] for x in parts]
+        return {''.join(c) for c in itertools.product(*slots)}
+    def overlap(a, b): return any(matches(i, b) for i in instances(a)) or any(matches(i, a) for i in instances(b))
+    groups = {'F1': ['T030', 'T031', 'T032'], 'F2': ['T033'], 'F3': ['T034']}
+    ft = {t: yaml.safe_load(open(f'docs/tasks/{t}.yml'))['files_touched'] for g in groups.values() for t in g}
+    bad = [(t1, p1, t2, p2) for g in groups.values() for t1, t2 in itertools.combinations(g, 2)
+           for p1 in ft[t1] for p2 in ft[t2] if overlap(p1, p2)]
+    assert not bad, bad
+    assert all(len(g) <= 3 for g in groups.values())
+    assert overlap('services/*/app/main.py', 'services/dashboard/app/main.py') and overlap('services/dashboard/app/repos/**', 'services/dashboard/app/repos/views.py')
+    assert not overlap('services/artifact-store/app/core/**', 'services/release-service/app/core/events.py')
+    print('disjoint')"  # prints disjoint (F1's three tasks share no file; F2 and F3 have one task each)
+  - |-
+    python3 -c "
+    import re, os, yaml
+    def slug(h): return re.sub(r'[^\w\- ]', '', h.strip().lower().replace('\`', '')).replace(' ', '-')
+    bad = []
+    for n in range(29, 35):
+        d = yaml.safe_load(open(f'docs/tasks/T0{n}.yml'))
+        for r in d['read_first']:
+            f, _, frag = r.partition('#')
+            m = re.fullmatch(r'docs/tasks/(T\d+)\.md', f)
+            if m and (m.group(1) in d['depends_on'] or m.group(1) == 'T029'): continue
+            if not os.path.exists(f): bad.append(r); continue
+            if not frag: continue
+            if frag.startswith('/'):
+                node = yaml.safe_load(open(f))
+                try:
+                    for part in frag[1:].split('/'): node = node[part.replace('~1', '/').replace('~0', '~')]
+                except (KeyError, TypeError): bad.append(r)
+            elif frag not in {slug(l.lstrip('#')) for l in open(f) if l.startswith('#')}: bad.append(r)
+    assert not bad, bad
+    print('read_first ok')"  # prints read_first ok (hand-offs of dependencies are created later)
+  - |-
+    python3 -c "
+    import yaml
+    ev = yaml.safe_load(open('contracts/events.yml'))['\$defs']
+    assert ev['ArtifactVersion']['maximum'] == 2**63 - 1 == 9223372036854775807
+    assert ev['FailureReason']['enum'] == ['artifact upload failed', 'internal error']
+    assert ev['InterruptedRunSteps']['maxContains'] == 1 and ev['InterruptedRunSteps']['minContains'] == 0
+    rows = {'events BuildFinishedData': ev['BuildFinishedData']['anyOf'],
+            'runner Run': yaml.safe_load(open('contracts/api-pipeline-runner.yml'))['components']['schemas']['Run']['anyOf'],
+            'dashboard BuildView': yaml.safe_load(open('contracts/api-dashboard.yml'))['components']['schemas']['BuildView']['anyOf']}
+    for name, r in rows.items():
+        reasons = [x['properties']['failure_reason'] for x in r]
+        assert {'const': 'internal error'} in reasons and {'const': 'artifact upload failed'} in reasons, name
+        assert not any('\$ref' in x for x in reasons), name
+        ie = next(x for x in r if x['properties']['failure_reason'] == {'const': 'internal error'})['properties']
+        assert ie['failed_step'] == {'type': 'null'} and ie['steps']['\$ref'].endswith('InterruptedRunSteps'), name
+    print('contract changes ok')"  # prints contract changes ok (Q-40 cap; Q-41 reason and the fourth state row in all three tables)
+  - |-
+    python3 -c "
+    import yaml, glob
+    bad, seen = [], []
+    def walk(n, path):
+        if isinstance(n, dict):
+            if 'version' in (n.get('properties') or {}):
+                seen.append('/'.join(path)); v = n['properties']['version']
+                if v.get('\$ref', '').split('#')[-1] != '/\$defs/ArtifactVersion': bad.append('/'.join(path))
+            if n.get('name') == 'version' and n.get('in') == 'path':
+                seen.append('/'.join(path))
+                if not n['schema']['\$ref'].endswith('/ArtifactVersion'): bad.append('/'.join(path))
+            for k, v in n.items(): walk(v, path + (str(k),))
+        elif isinstance(n, list):
+            for i, v in enumerate(n): walk(v, path + (str(i),))
+    for f in sorted(glob.glob('contracts/*.yml')): walk(yaml.safe_load(open(f)), (f,))
+    assert not bad, bad
+    assert len(seen) >= 3, seen
+    print('every version capped:', len(seen))"  # prints every version capped: 3 (Artifact, ArtifactRef, the download path parameter; every version schema in the six files is a ref to ArtifactVersion)
+  - |-
+    python3 -c "
+    import yaml, glob
+    bad = []
+    def walk(n, path):
+        if isinstance(n, dict):
+            if isinstance(n.get('pattern'), str) and path[-1:] != ('not',) and (n.get('not') or {}).get('pattern') != '\n':
+                bad.append('/'.join(path))
+            for k, v in n.items(): walk(v, path + (str(k),))
+        elif isinstance(n, list):
+            for i, v in enumerate(n): walk(v, path + (str(i),))
+    for f in sorted(glob.glob('contracts/*.yml')): walk(yaml.safe_load(open(f)), (f,))
+    assert not bad, bad
+    print('every pattern guarded')"  # prints every pattern guarded (#121 still holds)
+  - |-
+    python3 scripts/ci/check_contracts.py && python3 scripts/ci/check_contracts.py --self-test  # both exit 0 (with scripts/ci/requirements-contracts.txt installed)
+  - |-
+    python3 -c "
+    from jsonschema import Draft202012Validator
+    from referencing import Registry, Resource
+    from referencing.jsonschema import DRAFT202012
+    import yaml
+    B = 'https://shipyard.invalid/contracts/'
+    reg = Registry().with_resources((B + f, Resource.from_contents(yaml.safe_load(open('contracts/' + f)), default_specification=DRAFT202012)) for f in ['events.yml', 'errors.yml', 'api-pipeline-runner.yml', 'api-dashboard.yml', 'api-release-service.yml', 'api-artifact-store.yml'])
+    ok = lambda u, v: Draft202012Validator({'\$ref': B + u}, registry=reg).is_valid(v)
+    T = '2026-11-25T13:00:00Z'; s = lambda n, st, a=None, b=None: {'name': n, 'status': st, 'started_at': a, 'finished_at': b}
+    d = {'build_id': '2c4e6a8b-1d3f-4b5a-9c7e-0f2a4c6e8b12', 'pipeline_name': 'p', 'outcome': 'failed', 'failed_step': None, 'failure_reason': 'internal error', 'steps': [s('a', 'passed', T, T), s('b', 'failed', T, T), s('c', 'skipped')]}
+    F = 'events.yml#/\$defs/BuildFinishedData'
+    assert ok(F, d) and ok(F, {**d, 'steps': [s('a', 'skipped')]})
+    assert not ok(F, {**d, 'failed_step': 'b'}) and not ok(F, {**d, 'steps': [s('a', 'failed', T, T), s('b', 'failed', T, T)]})
+    assert not ok(F, {**d, 'steps': [s('a', 'running', T)]}) and not ok(F, {**d, 'failure_reason': 'artifact upload failed'})
+    R = 'api-release-service.yml#/components/schemas/ReleaseRequest'
+    assert ok(R, {'artifact': {'name': 'a', 'version': 2**63 - 1}, 'requested_by': 's'}) and not ok(R, {'artifact': {'name': 'a', 'version': 2**63}, 'requested_by': 's'})
+    print('rules behave')"  # prints rules behave (with scripts/ci/requirements-contracts.txt installed)
+  - |-
+    python3 -I scripts/team/check_brief_quotes.py  # exits 0
+  - |-
+    for s in pipeline-runner artifact-store release-service dashboard; do (cd services/$s && uv run pytest -q) || exit 1; done  # exits 0: the services' conformance and shared tests still pass on the changed contracts (CI stays green)
+  - |-
+    for q in 39 40 41 42 43; do grep -A12 "^### Q-$q " docs/OPEN_QUESTIONS.md | grep -q 'answered-by-user' || { echo "Q-$q"; exit 1; }; done && for t in 30 31 32 33 34; do grep -q "^| \[T0$t\](tasks/T0$t.yml) .* | todo |$" docs/PLAN.md || { echo "row T0$t"; exit 1; }; done && grep -q 'Wave 2 follow-ups (the project owner, 2026-11-27' docs/PLAN.md && grep -q 'Not in wave 3: the React dashboard' docs/PLAN.md  # exits 0
+  - |-
+    ! git diff origin/main...HEAD -U0 | grep '^+' | grep -wE 'N[i]r|R[e]gev'  # exits 0: no personal name in the added text (the lead's instruction)
+  - |-
+    test -z "$(git diff --name-only origin/main...HEAD | grep -vxF -f <(python3 -c "import yaml; print('\n'.join(yaml.safe_load(open('docs/tasks/T029.yml'))['files_touched'] + ['docs/tasks/T029.md']))"))"  # exits 0: only the listed files changed
+  - "reviewer APPROVE: every decision of 2026-11-27 recorded and traced to a task or to wave 3, contract changes minimal and consistent across the six files, specs runnable and disjoint (review gate, not a command)"
+summary: >
+  Architect task after wave 2 closed. Records the project owner's decisions of 2026-11-27 08:42 Asia/Jerusalem (#163, #170, #167,
+  #171, #177; confirmed in the lead session, recorded by the lead on the issues) as Q-39..Q-43. Contract changes
+  between waves: ArtifactVersion maximum 2^63-1 with 422 for larger values (#170, Q-40); FailureReason gets
+  internal error, a new InterruptedRunSteps and a fourth state row in BuildFinishedData, Run and BuildView
+  (#167, Q-41, whose condition is met). No contract change for #163 (wave 3) or #171 (convention change: 5 s
+  total deadline, async sender). PLAN.md: the follow-up groups F1 (T030-T032), F2 (T033), F3 (T034), the wave 3
+  outline per #177, the event-sender convention, task rows and contract change requests. Specs T030-T034. No code.

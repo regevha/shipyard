@@ -1,0 +1,76 @@
+id: T032
+title: "Wave 2 follow-up F1 release-service: version cap 422 and integer column (#170), event sender with a 5 s deadline off the handler pool (#171)"
+owner: backend-dev
+branch: T032-release-service-cap-deadline
+mode: team
+ui: false
+wave: 2
+depends_on: [T029]
+migration: false
+read_first:
+  - docs/PLAN.md#waves
+  - docs/PLAN.md#conventions
+  - docs/OPEN_QUESTIONS.md#q-40-artifact-versions-above-263-1
+  - docs/OPEN_QUESTIONS.md#q-42-event-senders-blocked-by-a-hanging-dashboard
+  - contracts/events.yml#/$defs/ArtifactVersion
+  - contracts/api-release-service.yml
+  - docs/tasks/T026.md
+  - docs/tasks/T029.md
+files_touched:
+  - services/release-service/app/main.py
+  - services/release-service/app/models.py
+  - services/release-service/app/core/**
+  - services/release-service/app/repos/**
+  - services/release-service/app/routers/**
+  - services/release-service/tests/conftest.py
+  - services/release-service/tests/test_main.py
+  - services/release-service/tests/test_release_api.py
+  - services/release-service/tests/test_release_events.py
+  - services/release-service/tests/test_release_version_cap.py
+  - services/release-service/tests/test_release_event_deadline.py
+  - services/release-service/DATA_MODEL.md
+acceptance:
+  - |-
+    cd services/release-service && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing  # exits 0, coverage at or above fail_under
+  - |-
+    cd services/release-service && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
+  - |-
+    cd services/release-service && uv run pytest -q tests/test_release_version_cap.py::test_q40_version_max_round_trips_exactly tests/test_release_version_cap.py::test_q40_version_above_max_is_422_nothing_stored_no_event tests/test_release_version_cap.py::test_q40_version_column_is_integer  # exits 0
+  - |-
+    cd services/release-service && uv run pytest -q tests/test_release_event_deadline.py::test_q42_hanging_dashboard_does_not_delay_other_requests tests/test_release_event_deadline.py::test_q42_event_dropped_at_deadline tests/test_release_event_deadline.py::test_q42_retry_keeps_event_id_within_deadline tests/test_release_event_deadline.py::test_q42_pending_events_are_capped tests/test_release_event_deadline.py::test_q42_shutdown_cancels_pending_sends  # exits 0
+  - |-
+    git diff --quiet origin/main -- services/release-service/pyproject.toml services/release-service/uv.lock && python3 scripts/ci/check_shared_copy.py  # exits 0: no new package, T022 copies untouched
+  - |-
+    grep -qiE 'unfixed.*[0-9.]+ ?s' docs/tasks/T032.md  # exits 0: the hand-off records how long the unrelated request took on the unfixed code
+  - |-
+    python3 scripts/ci/check_task_scope.py T032-release-service-cap-deadline origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Group F1 of the wave 2 follow-ups, runs in parallel with T030 and T031; no contract change here. (1) Q-40, #170
+  (the project owner, 2026-11-27: cap versions in the contract): POST /releases with artifact.version above
+  9223372036854775807 (2^63-1), for example 2^63 and 2^200, is 422 validation_failed (location
+  body.artifact.version), nothing is stored and no event is sent; the existing test in tests/test_release_api.py
+  that accepts such versions changes accordingly. 2^63-1 is accepted and comes back exactly from the 201, GET
+  /releases/{release_id}, the decision and promote answers and the release.requested and release.decided event
+  data. The reason for the text column (no upper bound, app/repos/tables.py) is gone: store the version as an
+  integer column (create_all, throw-away data, no migration in wave 2) and update DATA_MODEL.md;
+  test_q40_version_column_is_integer checks the column type through SQLAlchemy metadata. Precedence stays as in
+  the contract (422 path, 404, 422 body, 409). (2) Q-42, #171 (the project owner, 2026-11-27: fix now): the
+  release.requested and release.decided sender follows the new event-sender convention in docs/PLAN.md
+  § Conventions exactly: 5 s total deadline per event (attempt timeout min(2 s, time left), waits 0.5 s then 1 s,
+  no attempt or wait past the deadline, then drop and log), same event_id on every attempt, retry only on a
+  network error, a timeout or a 5xx, one httpx.AsyncClient per app closed in the lifespan, each send its own
+  asyncio task on the server's event loop, never on the handler thread pool and never awaited by a handler or a
+  background task; at most 1000 events pending (one more is dropped and logged); at shutdown pending sends are
+  cancelled within 1 s. Sends are still scheduled only after the commit. Keep the deadline, the attempt timeout,
+  the waits and the pending cap injectable for tests; give tests a way to wait until no send is pending instead of
+  sleeping. test_q42_hanging_dashboard_does_not_delay_other_requests runs the real app with uvicorn in a
+  background thread on a free 127.0.0.1 port, with DASHBOARD_URL pointing at a local listener that accepts
+  connections and never answers, sends 80 concurrent POST /releases (each 201), then, while those events are still
+  pending, one GET /releases/{release_id} that must answer within 1.0 s (the T026 review measured 6.09 s); run it
+  once on the unfixed code and record that time in the hand-off as "unfixed: <n> s". The test also asserts, through a test hook on the sender that reports the number of pending sends, that at least one event is still
+  pending at the moment the GET is timed, so the GET is measured while the dashboard is hanging. Update the existing sender
+  tests (tests/test_release_events.py, tests/conftest.py) to the async sender without weakening what they prove.
+  No new package. Never edit the T022 copies. Hand-off docs/tasks/T032.md.

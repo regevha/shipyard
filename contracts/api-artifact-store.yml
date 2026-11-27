@@ -13,7 +13,10 @@ info:
 
     Versions and checksums (user decision, Q-17, #33): the store assigns an integer version per artifact name,
     starting at 1, so every upload creates a new version and a re-upload never conflicts; it computes the
-    SHA-256 of the bytes; the uploader may send the checksum it expects, and a mismatch is 422. Upload format (Q-18 default): raw bytes, name in the path,
+    SHA-256 of the bytes; the uploader may send the checksum it expects, and a mismatch is 422. Versions are
+    capped at 9223372036854775807 (2^63-1; user decision, Q-40, #170, events.yml ArtifactVersion): the store never
+    assigns a larger one (an upload that would need it stores nothing and is 500 internal_error, reachable only
+    after 2^63-1 uploads of one name), and a larger `{version}` in a download is 422 validation_failed. Upload format (Q-18 default): raw bytes, name in the path,
     `build_id` as a query parameter, at most 100 MiB. Storage backend: wave 2.
 
 
@@ -120,6 +123,10 @@ paths:
       operationId: downloadArtifact
       x-assumed: [Q-18]
       summary: Download one stored version
+      description: >
+        Error precedence: 422 validation_failed for a malformed `{name}` or `{version}` (including a version
+        below 1 or above 9223372036854775807 = 2^63-1, user decision, Q-40, #170), then 404 not_found for a
+        valid name and version that is not stored.
       parameters:
         - $ref: "#/components/parameters/ArtifactName"
         - name: version
@@ -180,7 +187,9 @@ components:
                   code: not_found
                   message: artifact shipyard-api version 9 not found
     ValidationFailed:
-      description: The request is invalid (validation_failed), for example a version that is not a positive integer.
+      description: >
+        The request is invalid (validation_failed), for example a version that is not a positive integer or is
+        above 9223372036854775807 (2^63-1, user decision, Q-40, #170).
       content:
         application/json:
           schema:

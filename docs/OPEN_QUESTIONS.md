@@ -195,7 +195,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Point:** `docs/PLAN.md` § "Waves" puts the services in wave 2 and the queue, auth, retries, persistence and
   e2e flows in wave 3. That split is the lead's outline, not the brief's.
 - **Status:** `answered-by-user` (2026-11-26, issue #41): the outline in `docs/PLAN.md` § "Waves" stands, with
-  wave 2 narrowed to the thinnest slice through all four services.
+  wave 2 narrowed to the thinnest slice through all four services. Wave 3 scope refined by the project owner on
+  2026-11-27 (issue #177): see Q-43 (the React dashboard moves to a later wave).
 - **User decision (2026-11-26, #41):**
 
   > #41 Q-27: confirmed, wave 2 = thinnest slice through all four services; wave 3 = queue, auth, retries, persistence, e2e.
@@ -473,3 +474,115 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **User decision (2026-11-26 21:28 Asia/Jerusalem, lead session chat):**
 
   > ok
+
+### Q-39 Request size caps on the runner, release-service and `POST /events`
+- **Point (issue #163, from T023; also T024 review #167):** the contracts set no request body cap and no 413 for
+  `POST /runs`, `POST /releases` and the dashboard's `POST /events`; only artifact-store caps uploads (100 MiB). A
+  3000-step, 3 MB definition was accepted in the T024 review.
+- **Options (wave 2 summary):** (a) add caps to the contracts now; (b) leave them for wave 3.
+- **Status:** `answered-by-user` (2026-11-27, issue #163): option (b). No contract change now; request size limits
+  are part of the wave 3 scope (Q-43). #163 stays open for wave 3.
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
+  session; recorded by the lead on #163):**
+
+  > #163: (b), leave for wave 3. The services have no login yet, and wave 3 adds it, so add size limits then.
+
+### Q-40 Artifact versions above 2^63-1
+- **Point (issue #170, found by T026):** `events.yml` set no maximum on `ArtifactVersion`, so a version above 2^63-1
+  was contract-valid, but the dashboard answered 500 for it (SQLite INTEGER overflow), release-service stored it as
+  text and artifact-store answered 404 for such a download.
+- **Options (wave 2 summary):** (a) the dashboard stores such versions safely, no contract change; (b) the contract
+  caps the version at 2^63-1, so larger ones are rejected; (c) keep it as a limitation.
+- **Status:** `answered-by-user` (2026-11-27, issue #170): option (b). Applied in T029:
+  `events.yml#/$defs/ArtifactVersion` has `maximum: 9223372036854775807`; every version in the six files refers to
+  it (`Artifact`, `ArtifactRef`, artifact-store's `{version}` path parameter, release-service's request body and
+  `Release`, the dashboard's views). A larger value is 422 `validation_failed` wherever a version is received;
+  artifact-store never assigns one. The code follows in T030-T032 (`docs/PLAN.md` § Waves).
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
+  session; recorded by the lead on #170):**
+
+  > #170: (b), cap versions in the contract. It is a one-line limit that makes the edge case explicit instead of a silent 500.
+
+### Q-41 An unexpected error in a run's background task
+- **Point (issue #167, T024 review):** an error nothing anticipated in the runner's background task was logged and
+  the run stayed `running` for ever. `Run` and `BuildFinishedData` had no valid failed state for it: a failed build
+  needs a `failed_step` or a `failure_reason`, and `FailureReason` was a closed enum whose only value was
+  `artifact upload failed`.
+- **Options (wave 2 summary):** (a) a new state in the contract; (b) fail the run in code, no new state.
+- **Status:** `answered-by-user` (2026-11-27, issue #167): option (b). The condition in the decision is met (the
+  failed state could not carry a reason for this case), so T029 changed the contract as little as possible:
+  `FailureReason` gets a second value, `internal error` (the contract's name, after the `internal_error` error code;
+  it names the runner as the cause and carries no exception text), and the state tables of `BuildFinishedData`,
+  `Run` and `BuildView` get one row: outcome failed, `failed_step` null, `failure_reason` `internal error`, `steps`
+  as the new `events.yml#/$defs/InterruptedRunSteps` (each step passed, failed or skipped, at most one failed: the
+  step that was running when the error happened). No new run status. The upload row now requires exactly
+  `artifact upload failed`. The code follows in T033 (runner) and T030 (dashboard intake accepts the new row).
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
+  session; recorded by the lead on #167):**
+
+  > #167: (b), mark it failed in code. A crash is a failure, and a stuck "running" build is a real bug. Change the contract only if the failed state cannot carry a reason.
+
+- **Follow-up: the write that marks the run failed fails too (T029 open question 2, reviewer B1 on T029).** T033
+  writes the failed state in a fresh session and retries it up to 3 times; the question was what happens if all
+  three fail (for example the database is gone). Options: accept the rare case and name it in the contract; keep
+  retrying in the background with a limit; or a startup or read-time check that fails runs stuck `running`.
+  **Answered by the project owner (2026-11-27, Asia/Jerusalem, in the lead session, through the lead's
+  multiple-choice question):**
+
+  > Accept the rare case
+
+  **Then superseded by the project owner (2026-11-27 09:44 Asia/Jerusalem, in the lead session):**
+
+  > Rare cases should be ignored until end of wave 3
+
+  So the case is ignored until the end of wave 3. Applied in T029: `api-pipeline-runner.yml` (the Unexpected
+  errors paragraph of its info) and `events.yml#/$defs/InterruptedRunSteps` state the behaviour (an unexpected
+  error during a run marks it failed with `internal error` and sends build.finished) with no absolute promise
+  that a run is never left `running` and no clause for this case. T033 has no retry, test or hand-off note for it.
+
+### Q-42 Event senders blocked by a hanging dashboard
+- **Point (issue #171, T026 review):** pipeline-runner, artifact-store and release-service send events with a
+  synchronous client from background tasks on the handler thread pool. A dashboard that accepts connections and
+  never answers holds a thread about 7.5 s per event; 80 concurrent creates then one GET took 6.09 s, against the
+  `docs/PLAN.md` convention that a slow dashboard never delays a response.
+- **Options (wave 2 summary):** (a) send events with an async client and drop after a deadline; (b) accept it for
+  wave 2.
+- **Status:** `answered-by-user` (2026-11-27, issue #171): option (a), fixed now. Reading (the lead's, kept by the
+  architect): the dashboard itself makes no outbound calls (it calls no other service), so the decision's
+  outbound calls are the three senders' calls to the dashboard's `POST /events`. No contract change. The event
+  sender convention in `docs/PLAN.md` § Conventions now has a total deadline of 5 s per event and an async sender
+  off the handler thread pool; the code follows in T031-T033.
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
+  session; recorded by the lead on #171):**
+
+  > #171: (a), fix now. A deadline on the dashboard's outbound calls is a small change, and it still helps after the queue arrives.
+
+- **Follow-up: the runner's simulated steps and its upload (T029 open question 1).** These still run on the
+  request-handler thread pool (the `time.sleep` of each simulated step, and the upload to artifact-store with up
+  to 10 s per httpx phase, #132), so under load they can delay unrelated requests to the runner. The decision
+  above covers only the calls to the dashboard. Options: fix it in the wave 2 follow-ups (a new task after T033),
+  or leave it to wave 3, where the queue and real steps change this code anyway. **Answered by the project owner
+  (2026-11-27, Asia/Jerusalem, in the lead session, through the lead's multiple-choice question):**
+
+  > Wave 3, with the queue
+
+  Applied in T029: written into the wave 3 outline of `docs/PLAN.md` § Waves; T033 leaves this code as it is, and
+  T034's pipeline-runner stopped-dashboard test measures against a baseline taken with the dashboard running, so
+  this delay cannot fail it.
+
+### Q-43 Wave 3 scope
+- **Point:** Q-27 outlined wave 3 as the queue, auth, retries, persistence and e2e flows, with a React dashboard
+  possible; the wave 2 summary asked the project owner to confirm the scope before wave 3 starts.
+- **Status:** `answered-by-user` (2026-11-27, issue #177): wave 3 is the queue, retries and persistence, then
+  end-to-end tests, plus login, request size limits (#163, Q-39) and a second look at dashboard buttons (Q-32). The
+  React dashboard moves to a later wave. Written into the wave 3 outline of `docs/PLAN.md` § Waves (outline only,
+  no task specs yet). Still to settle when wave 3 is planned: what login covers (people using release-service and
+  the dashboard, the services calling each other (Q-09), or both).
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
+  session; recorded by the lead on new issue #177):**
+
+  > Wave 3: the queue, retries and persistence, then end-to-end tests, plus login, request size limits (#163) and a second look at dashboard buttons (Q-32). Leave the React dashboard for a later wave so wave 3 stays focused.
+
+- **Confirmation (the project owner, lead session, 2026-11-27, covering Q-39 to Q-43):**
+
+  > Yes. They are all decisions

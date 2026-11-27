@@ -1,0 +1,65 @@
+id: T030
+title: "Wave 2 follow-up F1 dashboard: version cap 422 at intake (#170), accept the internal-error build.finished row (#167)"
+owner: backend-dev
+branch: T030-dashboard-version-cap
+mode: team
+ui: false
+wave: 2
+depends_on: [T029]
+migration: false
+read_first:
+  - docs/PLAN.md#waves
+  - docs/PLAN.md#conventions
+  - docs/OPEN_QUESTIONS.md#q-40-artifact-versions-above-263-1
+  - docs/OPEN_QUESTIONS.md#q-41-an-unexpected-error-in-a-runs-background-task
+  - contracts/events.yml#/$defs/ArtifactVersion
+  - contracts/events.yml#/$defs/FailureReason
+  - contracts/events.yml#/$defs/BuildFinishedData
+  - contracts/events.yml#/$defs/InterruptedRunSteps
+  - contracts/api-dashboard.yml#/paths/~1events/post
+  - contracts/api-dashboard.yml#/components/schemas/BuildView
+  - docs/tasks/T023.md
+  - docs/tasks/T029.md
+files_touched:
+  - services/dashboard/app/models.py
+  - services/dashboard/app/repos/**
+  - services/dashboard/app/routers/**
+  - services/dashboard/tests/conftest.py
+  - services/dashboard/tests/test_dashboard_events.py
+  - services/dashboard/tests/test_dashboard_read_api.py
+  - services/dashboard/tests/test_dashboard_followups.py
+  - services/dashboard/DATA_MODEL.md
+acceptance:
+  - |-
+    cd services/dashboard && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov=app --cov-report=term-missing  # exits 0, coverage at or above fail_under
+  - |-
+    cd services/dashboard && uv run pytest -q tests/test_contract_conformance.py::test_openapi_matches_contract  # exits 0 (Q-22)
+  - |-
+    cd services/dashboard && uv run pytest -q tests/test_dashboard_followups.py::test_q40_version_max_is_accepted_and_read_back_exactly tests/test_dashboard_followups.py::test_q40_version_above_max_is_422_and_nothing_stored tests/test_dashboard_followups.py::test_q41_internal_error_build_finished_is_accepted_and_listed tests/test_dashboard_followups.py::test_q41_invalid_internal_error_rows_are_422 tests/test_dashboard_followups.py::test_upload_reason_row_still_requires_every_step_passed  # exits 0
+  - |-
+    git diff --quiet origin/main -- services/dashboard/pyproject.toml services/dashboard/uv.lock services/dashboard/static && python3 scripts/ci/check_shared_copy.py  # exits 0: no new package, static UI untouched, T022 copies untouched
+  - |-
+    python3 scripts/ci/check_task_scope.py T030-dashboard-version-cap origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head
+  - "reviewer APPROVE (review gate, not a command)"
+summary: >
+  Group F1 of the wave 2 follow-ups, runs in parallel with T031 and T032. Implements the T029 contract changes in
+  the dashboard; no contract change here (contracts frozen). (1) Q-40, #170 (the project owner, 2026-11-27: cap
+  versions in the contract): an artifact version above 9223372036854775807 (2^63-1) in artifact.uploaded,
+  release.requested or release.decided is 422 validation_failed (today 500 from a SQLite overflow), with a
+  `details` location such as body.data.version or body.data.artifact.version; nothing is stored. 2^63-1 itself is
+  accepted (202) and read back exactly from GET /artifacts and GET /releases. Tests at 2^63-1 and 2^63 (also 2^200)
+  for each of the three event types. (2) Q-41, #167: build.finished with outcome failed, failed_step null and
+  failure_reason "internal error" is valid when steps match events.yml InterruptedRunSteps (each passed, failed or
+  skipped, at most one failed; passed steps first, then the failed one if any, then skipped ones); intake accepts
+  it (202) and GET /builds?status=failed lists it with failure_reason internal error. Cases to accept: one failed
+  step after passed ones with skipped ones after it; no failed step (passed then skipped); every step skipped.
+  Cases that are 422: internal error with failed_step set; two failed steps; a running or pending step; a passed
+  step after the failed or a skipped one; internal error with outcome passed; "artifact upload failed" with any
+  step not passed (test_upload_reason_row_still_requires_every_step_passed: the upload row now requires exactly
+  that text and every step passed). app/repos/views.py today maps any stored reason to "artifact upload failed";
+  store and return the reason as received. Every response in the new tests validates against the contract
+  schemas (BuildView, ArtifactPage, ReleasePage). Update DATA_MODEL.md if a column changes. Do not touch
+  static/ (app.js already shows failure_reason as text), pyproject.toml, uv.lock or the T022 copies. Hand-off
+  docs/tasks/T030.md.

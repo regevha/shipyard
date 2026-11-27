@@ -40,6 +40,15 @@ info:
     value is chosen by the wave 2 runner task (issue #132).
 
 
+    Unexpected errors (user decision, Q-41, #167: "(b), mark it failed in code. A crash is a failure, and a
+    stuck "running" build is a real bug. Change the contract only if the failed state cannot carry a reason."):
+    any error of the runner itself while a run is in the background (in a step, in the upload other than a
+    non-201 answer, a network error or a timeout, or while recording the final state) marks the run `failed`
+    with `failed_step` null and `failure_reason` `internal error` (events.yml FailureReason, InterruptedRunSteps:
+    the step that was running is failed, steps not started are skipped), and then `build.finished` (outcome
+    failed, same fields) is sent. A run that already reached a final state keeps it.
+
+
     Naming: one run is one build. Its ID is `build_id` in every file (events, artifact uploads, dashboard); the
     resource paths stay `/runs` and `/runs/{build_id}` (user decision, Q-28, #85).
 
@@ -289,9 +298,11 @@ components:
         passed means `finished_at` is set, `failed_step` and `failure_reason` are null and every step passed;
         failed at a step means `finished_at` and `failed_step` are set, `failure_reason` is null and exactly one
         step failed; failed by the upload (user decision, #120) means `finished_at` is set, `failed_step` is
-        null, `failure_reason` is `artifact upload failed` and every step passed. Not checkable in JSON Schema,
-        but required: `failed_step` is the name of that failed step, the steps before it passed and those after
-        it are skipped (same rules as build.finished).
+        null, `failure_reason` is `artifact upload failed` and every step passed; failed by an internal error
+        (user decision, Q-41, #167) means `finished_at` is set, `failed_step` is null, `failure_reason` is
+        `internal error` and `steps` is events.yml InterruptedRunSteps. Not checkable in JSON Schema, but
+        required: `failed_step` is the name of that failed step, the steps before it passed and those after it
+        are skipped (same rules as build.finished).
       type: object
       additionalProperties: false
       required: [build_id, pipeline_name, status, created_at, finished_at, failed_step, failure_reason, steps]
@@ -308,19 +319,23 @@ components:
         finished_at:
           description: >
             When the run ended; null while running. The failed step's `finished_at` when a step failed,
-            otherwise when the fake upload ended (user decision, #120).
+            when the run was marked failed after an internal error (user decision, Q-41, #167), otherwise when
+            the fake upload ended (user decision, #120).
           anyOf:
             - $ref: "events.yml#/$defs/Timestamp"
             - type: "null"
         failed_step:
-          description: Name of the step that failed; null unless a step failed.
+          description: >
+            Name of the step that failed by its own result; null unless a step failed that way (also null
+            after an internal error, user decision, Q-41, #167).
           anyOf:
             - $ref: "events.yml#/$defs/StepName"
             - type: "null"
         failure_reason:
           description: >
             `artifact upload failed` when the run failed because the fake upload failed (user decision, #120);
-            null otherwise (events.yml FailureReason). The reason text is the user's; the field name, its
+            `internal error` when an unexpected runner error ended it (user decision, Q-41, #167); null
+            otherwise (events.yml FailureReason). The upload reason text is the user's; the field name, its
             required and nullable shape and the enum are the contract's choice.
           anyOf:
             - $ref: "events.yml#/$defs/FailureReason"
@@ -375,9 +390,20 @@ components:
             failed_step:
               type: "null"
             failure_reason:
-              $ref: "events.yml#/$defs/FailureReason"
+              const: artifact upload failed
             steps:
               $ref: "events.yml#/$defs/PassedRunSteps"
+        - properties:
+            status:
+              const: failed
+            finished_at:
+              $ref: "events.yml#/$defs/Timestamp"
+            failed_step:
+              type: "null"
+            failure_reason:
+              const: internal error
+            steps:
+              $ref: "events.yml#/$defs/InterruptedRunSteps"
       examples:
         - build_id: 5d0c6f1e-2b7a-4c39-9e8d-41a2f6b3c701
           pipeline_name: shipyard-api
