@@ -8,13 +8,13 @@ from pathlib import Path as FsPath
 from typing import IO, Annotated
 
 import anyio
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Path, Query, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
 from app.core.config import MAX_UPLOAD_BYTES
 from app.core.events import EventSender
 from app.errors import ApiError
-from app.models import CHECKSUM_PATTERN, NAME_PATTERN, UUID_PATTERN, Artifact
+from app.models import CHECKSUM_PATTERN, MAX_VERSION, NAME_PATTERN, UUID_PATTERN, Artifact
 from app.repos.artifacts import ArtifactRepo
 
 router = APIRouter()
@@ -66,9 +66,6 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBody]:
         spool.close()
 
 
-MAX_VERSION = 2**63 - 1  # larger versions cannot exist (and do not fit a database integer)
-
-
 async def _chunks(path: FsPath) -> AsyncGenerator[bytes, None]:
     """Open inside the generator so a cancelled stream (client gone) closes the file."""
     async with await anyio.open_file(path, "rb") as handle:
@@ -116,7 +113,6 @@ def upload_artifact(
         ),
     ],
     body: Annotated[UploadBody, Depends(read_upload)],
-    background: BackgroundTasks,
     repo: Annotated[ArtifactRepo, Depends(_repo)],
     sender: Annotated[EventSender, Depends(_sender)],
     x_checksum_sha256: Annotated[
@@ -127,7 +123,7 @@ def upload_artifact(
     if x_checksum_sha256 is not None and x_checksum_sha256 != body.sha256:
         raise ApiError(422, "checksum_mismatch", "sent checksum does not match the uploaded bytes")
     artifact = repo.create(name, build_id, body.sha256, body.size, body.file)  # committed here
-    background.add_task(sender.send_uploaded, artifact)
+    sender.schedule(artifact)  # returns at once; the send runs as its own task on the loop
     return artifact
 
 
@@ -146,10 +142,10 @@ def upload_artifact(
 )
 def download_artifact(
     name: NameParam,
-    version: Annotated[int, Path(ge=1)],
+    version: Annotated[int, Path(ge=1, le=MAX_VERSION)],
     repo: Annotated[ArtifactRepo, Depends(_repo)],
 ) -> Response:
-    found = repo.find(name, version) if version <= MAX_VERSION else None
+    found = repo.find(name, version)
     if found is None:
         raise ApiError(404, "not_found", f"artifact {name} version {version} not found")
     artifact, path = found

@@ -9,7 +9,7 @@ from sqlalchemy import DateTime, Engine, Integer, String, UniqueConstraint, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from app.models import Artifact
+from app.models import MAX_VERSION, Artifact
 from app.repos.blobs import BlobStore
 
 MAX_VERSION_RETRIES = 10
@@ -65,6 +65,8 @@ class ArtifactRepo:
                     current = session.scalar(
                         select(func.max(ArtifactRow.version)).where(ArtifactRow.name == name)
                     )
+                    if (current or 0) >= MAX_VERSION:
+                        raise RuntimeError("version cap reached")  # nothing stored; 500
                     row = ArtifactRow(
                         id=str(uuid.uuid4()),
                         name=name,

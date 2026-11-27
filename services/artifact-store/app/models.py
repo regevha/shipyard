@@ -5,6 +5,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+MAX_VERSION = 2**63 - 1  # events.yml ArtifactVersion maximum (Q-40)
 NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
 CHECKSUM_PATTERN = r"^[0-9a-f]{64}$"
 UUID_PATTERN = r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
@@ -14,7 +15,7 @@ class Artifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: Annotated[str, Field(min_length=1, max_length=100, pattern=NAME_PATTERN)]
-    version: Annotated[int, Field(ge=1)]
+    version: Annotated[int, Field(ge=1, le=MAX_VERSION)]
     checksum: Annotated[str, Field(pattern=CHECKSUM_PATTERN)]
     size_bytes: Annotated[int, Field(ge=0, le=104_857_600)]
     build_id: Annotated[str, Field(json_schema_extra={"format": "uuid"})]
