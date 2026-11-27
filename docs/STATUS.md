@@ -1,0 +1,108 @@
+# Shipyard status
+
+Written 2026-11-27 by the project-manager after the wave 2 close-out. Base: `main` at 3456c31 (all of wave 2 merged).
+Sources: the lead's verdicts and checks, `docs/PLAN.md`, the hand-offs in `docs/tasks/T020.md`..`T028.md`, `docs/DEMO.md`,
+and GitHub PR and issue facts (`gh api`). Anything the project-manager inferred is marked (inferred).
+
+## Done
+
+Wave 2 is done (lead verdict). Every task was reviewed by the full reviewer (T027 also by the ux-reviewer), fix rounds
+were verified, CI was green including `ci-ok`, and each was merged. Nothing is `unverified`: the browser checks ran in
+headless Chrome.
+
+| Task | What | PR (merge commit) | Fix rounds | Defects the review caught before merge |
+| --- | --- | --- | --- | --- |
+| T020 | Wave 2 plan, task specs, contract change #121 | #137 (f779826) | 1 | `StaticFiles` mounted at `/` broke the 404/405 rule; missing type stubs for strict mypy |
+| T021 | Scaffold: four service projects, `stack-tests/`, dev scripts, CI matrix | #151 (92980c2) | 2 | Worktree guard keyed to the caller's cwd, so a slot-0 wipe was possible; pid file held the `uv` wrapper, so SIGKILL orphaned uvicorn; a failing `uv sync` exited silently |
+| T022 | Shared error envelope and OpenAPI conformance helper | #156 (818c588) | 0 | none blocking |
+| T023 | Dashboard: events intake, read API, static mount | #162 (480f8a9) | 1 | Lax type coercion (JSON `true` stored as artifact version 1); untested build.finished state-table rejections; huge offset gave 500 |
+| T024 | Pipeline-runner: runs, simulated steps, fake upload, events | #164 (3d60a7f) | 1 | SQLite "database is locked" under 80-150 concurrent runs left runs `running` forever, sometimes after a 201 upload |
+| T025 | Artifact-store: versioned uploads, SHA-256, 413, download, event | #161 (7ce3379) | 2 | Version above 2^63-1 gave 500; `Range` answered 206 with a whole-file checksum; file handle leaked on client disconnect |
+| T026 | Release-service: request, decision, promote, events | #169 (70dde03) | 2 | Invalid JSON with a JSON content type on an unknown id gave 422, not 404; non-canonical UUID forms accepted; decision accepted `text/plain`, a CORS simple request |
+| T027 | Dashboard UI: builds, failures, artifacts, releases | #168 (2fc966c) | 2 | Note text contrast 3.95:1 (UX); one long contract-legal value pushed the columns about 27,000 px off-screen |
+| T028 | Stack tests, CI `stack` job, `docs/DEMO.md` | #174 (3456c31) | 0 | none in the services; a mutation run caught a broken upload |
+
+Fix round counts are from the lead's PR comments (T026 and T027 each had a verify round after the fix).
+
+## Numbers that matter
+
+- Services: four Python/FastAPI services on SQLite, one file each, ports 18000 + 10 x slot + service index.
+- Coverage: `fail_under = 85` in all four service `pyproject.toml` files (checked in the worktree). Recorded numbers:
+  T025 73 unit/API tests, 97% coverage; T022 shared tests (27 per service, reported by the reviewer), `app/errors.py` 98%.
+  Coverage for T023, T024, T026 and T027 is not recorded in the hand-offs or PR comments; the lead should supply it.
+- Stack suite: 10 test functions in `stack-tests/tests/` (inferred: 8 in `test_stack_flow.py`, 1 concurrency, 1 upload
+  failure; parametrized cases would add more). The lead's note says 15; the project-manager could not reconcile the two
+  counts without running the suite. Duration: about 29-31 s on slot 6 (T028 hand-off).
+- 100-concurrent-run test (`test_stack_concurrency.py`): every run reaches its final state; the dashboard lists each
+  build once; one artifact per passed build.
+- Real-server checks: T024, 500 runs and 1002 events with 0 misses; T025, 0 misses on POST-then-GET.
+- DEMO walkthrough (lead, 2026-11-27, main checkout, slot 0, `bash -euo pipefail`, `DEMO_PAUSE=0`): exit 0, last line
+  `dashboard API: 2 builds (passed, failed), 1 artifact, release approved by dana`. Headless Chrome screenshot of the
+  dashboard showed both builds, the failure, the artifact and both releases.
+
+## Known limitations (from `docs/DEMO.md`)
+
+- No authentication between services or for clients (Q-09). Wave 3.
+- SQLite data is throw-away: every start wipes the slot's data dir.
+- Steps are simulated (Q-19, Q-33): commands never run; exactly `fail` fails, anything else passes.
+- One fake artifact per passed build, named after the pipeline (Q-34); a failed build uploads nothing.
+- No upload retries (Q-36, #120): one failed or timed-out attempt (10 s) fails the build with `artifact upload failed`.
+- Events are plain HTTP, no queue (Q-27): three attempts, then dropped. A hanging dashboard can slow the senders (#171).
+- release-service does not check that the artifact exists (Q-16).
+- The dashboard has no buttons and shows no promotion (Q-32, Q-14).
+- A failed build can still show an artifact (#131, Q-37).
+- No request size caps on the runner, release-service or `POST /events` (#163); only artifact-store caps uploads (100 MiB).
+- The dashboard answers 500 for a `release.requested` with an artifact version above 2^63-1 (#170).
+- The dashboard shows at most 200 items per section (no paging UI).
+
+## Open follow-ups
+
+### Needs a user or contract decision
+
+- **#163** request size caps on the runner, release-service and `POST /events`. The contracts set none. Options: (a) add
+  caps to the contracts (a contract change through the lead); (b) leave them for wave 3.
+- **#170** (`task`, open) dashboard answers 500 for an artifact version above 2^63-1. Options: (a) the dashboard stores
+  such versions safely, no contract change; (b) the contract caps the version at 2^63-1, so release-service and
+  artifact-store reject larger ones (contract change); (c) keep as is and list it as a limitation.
+- **#167** (deferred) the runner has no error state for an unexpected background failure: the run stays `running`.
+  Options: (a) a new state in the contract; (b) keep it and fail the run in code without a state change.
+- **#171** (deferred) event senders block the handler thread pool when the dashboard hangs. Options: (a) send events with
+  an async client and drop after the deadline; (b) keep and accept the limitation. Behaviour choice, the user's to confirm.
+- Not a new issue: Q-09 (auth), a React dashboard and retries (#131) are wave 3 decisions already in `docs/PLAN.md`.
+
+### Open issues labelled `task` (not yet closed; the lead decides)
+
+- #173 T027 acceptance A4 passes vacuously (the fetch-literal grep matches nothing). The reviewer verified the property by
+  code and a runtime log. The lead's `done` for T027 should account for this.
+- #152 `check_shared_copy.py`: use argparse. #149 guard the `env -u SHIPYARD_SLOT` acceptance. #150 T025 octet-stream
+  request body and 413 ordering (inferred: T025 uses the dependency approach; the lead to check). #157 `differences()`
+  enum and const. #159 pin the hand-written `ErrorEnvelope` to `errors.yml`. #147 `environment.md` error-envelope row.
+  #146 mark the Q-11 retry numbers as the default (assumed), not a user decision.
+- #148 (`task`) and #132, #136 (`task`): inferred to be addressed by T021 (the pid-file and start-script fixes) and T024
+  (10 s upload timeout, recorded in its hand-off). The lead should check and close.
+
+### Deferred polish (by issue number)
+
+#153 pip-audit dependencies pinned. #155 Starlette `TestClient` deprecation warning (`httpx2`). #158 conformance: examples
+inside `anyOf`/`oneOf` branches. #160 `shared/errors.py` headers of another 4xx pass through to the 422. #165 artifact-store
+hardening. #166 dashboard intake logging, `HEAD /`, id case, index. #172 release-service `BEGIN IMMEDIATE` reads, untested
+`Settings.from_env`, unclosed executor in a test. #175 T028 contract checker gaps and a real no-retry check. #130 cosmetic
+rewrap in `api-release-service.yml`.
+
+## Proposed next wave (proposal only; the team stops at demo-ready and does not start it)
+
+Inferred from the wave 3 outline in `docs/PLAN.md` § Waves: replace the HTTP event calls with a real queue (contracts keep
+the payloads); auth between services (Q-09); retries, persistence and failure handling (#120, #131); e2e browser flows
+(e2e-tester); possibly a React dashboard (user decision).
+
+Suggested order, for the lead to decide: (1) the user answers the decision items above and Q-09 first, because the
+queue and auth change the contracts and need the lead's contract change request; (2) a wave 3a spec task for the queue;
+(3) auth and retries after it; (4) e2e flows last, as in wave 2 (tester last). No agents are launched by this report.
+
+## Decisions needed from the user
+
+1. #163 request size caps: (a) add to the contracts now, or (b) wave 3.
+2. #170 dashboard version above 2^63-1: (a) store safely, no contract change; (b) contract caps versions at 2^63-1; (c) keep as a limitation.
+3. #167 unexpected runner failure: (a) new state in the contract; (b) fail in code, no state change.
+4. #171 event senders blocked by a hanging dashboard: (a) async client with drop after deadline; (b) accept for wave 2.
+5. Wave 3 scope: queue, auth (Q-09), retries (#131), React dashboard or not. Already outlined in `docs/PLAN.md`; confirm before the wave starts.

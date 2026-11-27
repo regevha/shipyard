@@ -448,3 +448,25 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **User decision (2026-11-26, #120):**
 
   > #120: The fake upload runs after the last step passes and before the build is marked passed. If the upload fails, the build is failed with reason "artifact upload failed". No retries in wave 2.
+
+### Q-37 A failed build can still leave a stored artifact
+- **Point (found by the architect in T017 round 2, commit 1267398, PR #123; issue #131, `needs-decision`):** per #120 a
+  failed upload fails the build. If artifact-store saved the bytes and answered 201 but the runner timed out first,
+  an artifact and an `artifact.uploaded` event exist for a build marked failed.
+- **Options:** (a) accept it in wave 2 (the dashboard may show an artifact for a failed build), revisit with retries in
+  wave 3; (b) the runner deletes the artifact (a new endpoint or a contract change); (c) the dashboard filters or hides
+  artifacts of failed builds.
+- **Status:** `answered-by-user` (2026-11-26, issue #131): option (a). T023, T024, T025, T027 and T028 carried
+  `assumed (#131)`, which now stands as the decision. Retries and cleanup are wave 3.
+- **User decision (2026-11-26 21:41 Asia/Jerusalem, #131, comment by Nir; the reply was the letter of the option):**
+
+  > a
+
+### Q-38 Coverage threshold per service
+- **Point:** the lead proposed `fail_under = 85` for each of the four services; T021 proposed the same in its hand-off
+  (`docs/tasks/T021.md`). Config holds it in each service's `pyproject.toml` (`[tool.coverage.report]`).
+- **Status:** `answered-by-user` (2026-11-26, as reported by the lead): the user agreed to the proposal. The reply is not
+  in the GitHub comments the project-manager searched; the lead should confirm the exact wording.
+- **User decision (2026-11-26, per the lead):**
+
+  > fail_under = 85 in each service; the user replied "ok" to the lead's proposal
