@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.core.events import EventSender
 from app.main import create_app
+from app.models import ArtifactRef, Release
 
 
 class HangingDashboard:
@@ -126,11 +128,15 @@ def hanging_app(settings: Settings, fakes: Fakes) -> tuple[FastAPI, list[float]]
 def test_q42_event_dropped_at_deadline(
     settings: Settings, fakes: Fakes, caplog: pytest.LogCaptureFixture
 ) -> None:
+    # Deadline 0.6 s, attempt timeout 0.5 s, instant (fake) waits. With the deadline: attempt 1
+    # runs 0.5 s, attempt 2 gets only the 0.1 s left (min(attempt timeout, time left)), and the
+    # next wait would end past the deadline, so there is no third attempt: ~0.6 s in total.
+    # Without a deadline: three full 0.5 s attempts, ~1.5 s.
     cfg = replace(
         settings,
         event_deadline_seconds=0.6,
-        event_timeout_seconds=0.25,
-        event_backoff_seconds=(0.1, 0.1),
+        event_timeout_seconds=0.5,
+        event_backoff_seconds=(0.05, 0.05),
     )
     app, attempt_starts = hanging_app(cfg, fakes)
     caplog.set_level(logging.WARNING, logger="release-service.events")
@@ -139,10 +145,52 @@ def test_q42_event_dropped_at_deadline(
         assert client.post("/releases", json=request_body()).status_code == 201
         assert client.app.state.events.wait_idle(5.0)  # type: ignore[attr-defined]
         total = time.monotonic() - t0
-    assert 0.5 <= total < 1.5  # dropped at about the 0.6 s deadline, not after 3 full attempts
-    assert 2 <= len(attempt_starts) <= 3
-    assert all(s - t0 < 0.6 for s in attempt_starts)  # no attempt starts past the deadline
+    assert len(attempt_starts) == 2
+    assert 0.55 <= total < 0.9, total
+    assert attempt_starts[1] - attempt_starts[0] >= 0.45  # first attempt ran its full timeout
+    assert fakes.sleeps == [0.05]  # the second wait was skipped: it would end past the deadline
     assert "dropping release.requested" in caplog.text
+
+
+def test_q42_no_attempt_starts_when_the_deadline_has_passed(settings: Settings) -> None:
+    # A fake clock; the wait overshoots the deadline, so the next attempt must not start.
+    now = [0.0]
+    attempts: list[float] = []
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        attempts.append(now[0])
+        raise httpx.ConnectError("down", request=request)
+
+    async def overshooting_sleep(seconds: float) -> None:
+        now[0] += seconds + 10.0
+
+    async def run() -> None:
+        sender = EventSender(
+            replace(settings, event_deadline_seconds=5.0),
+            httpx.MockTransport(refuse),
+            overshooting_sleep,
+            lambda: now[0],
+        )
+        await sender.release_requested(_release())
+        while sender.pending():
+            await asyncio.sleep(0.01)
+        await sender.close()
+
+    asyncio.run(run())
+    assert attempts == [0.0]
+
+
+def _release() -> Release:
+    return Release(
+        release_id=UUID(int=1),
+        artifact=ArtifactRef(name="a", version=1),
+        status="pending",
+        requested_by="s",
+        requested_at="2026-11-27T00:00:00.000Z",
+        decided_by=None,
+        decided_at=None,
+        promoted_at=None,
+    )
 
 
 def test_q42_retry_keeps_event_id_within_deadline(settings: Settings, fakes: Fakes) -> None:
