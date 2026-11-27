@@ -49,6 +49,10 @@ def test_startup_creates_tables_in_a_file_database(
 ) -> None:
     db = tmp_path / "sub" / "runner.db"
     monkeypatch.setenv("PIPELINE_RUNNER_DATABASE_URL", f"sqlite:///{db}")
+    # #167 review note: never post to a real $DASHBOARD_URL; nothing listens on this closed port
+    monkeypatch.setenv("DASHBOARD_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ARTIFACT_STORE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("PIPELINE_RUNNER_STEP_SECONDS", "0")
     with TestClient(create_app()) as c:
         body = {"name": "p", "steps": [{"name": "a", "command": "fail"}]}
         build_id = c.post("/runs", json=body).json()["build_id"]

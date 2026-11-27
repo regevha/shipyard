@@ -43,12 +43,23 @@ class Runner:
             self._execute(build_id)
         except Exception:
             log.exception("run %s aborted by an unexpected error", build_id)
+            self._fail_internal(build_id)
+
+    def _fail_internal(self, build_id: UUID) -> None:
+        """Q-41: mark the run failed with `internal error` and send build.finished. A run whose
+        final state is already committed keeps it. Never raises."""
+        try:
+            done = self._repo.fail_internal(build_id, now_iso())
+            if done is not None:
+                self._events.build_finished(done)
+        except Exception:
+            log.exception("run %s could not be marked failed", build_id)
 
     def _execute(self, build_id: UUID) -> None:
         run = self._repo.get(build_id)
         assert run is not None
         commands = self._repo.commands(build_id)
-        for position, (step, command) in enumerate(zip(run.steps, commands, strict=True)):
+        for position, command in enumerate(commands):
             started = now_iso()
             self._repo.set_step(build_id, position, "running", started_at=started)
             if position == 0:
@@ -57,9 +68,7 @@ class Runner:
                 self._sleep(self._settings.step_seconds)
             finished = now_iso()
             if command == FAIL_COMMAND:
-                self._repo.set_step(build_id, position, "failed", finished_at=finished)
-                self._repo.skip_steps_from(build_id, position + 1)
-                done = self._repo.finish(build_id, "failed", finished, failed_step=step.name)
+                done = self._repo.fail_step(build_id, position, finished)
                 self._events.build_finished(done)
                 return
             self._repo.set_step(build_id, position, "passed", finished_at=finished)
@@ -88,7 +97,7 @@ class Runner:
                         "X-Checksum-SHA256": hashlib.sha256(body).hexdigest(),
                     },
                 )
-        except Exception as exc:  # network error, timeout or anything else: the upload failed
+        except httpx.TransportError as exc:  # network error or timeout: the upload failed
             log.warning("artifact upload of build %s failed: %s", run.build_id, type(exc).__name__)
             return False
         if response.status_code != 201:

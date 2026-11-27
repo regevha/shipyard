@@ -14,7 +14,7 @@ created at startup with `metadata.create_all` (no migrations in wave 2; the data
 | created_at | VARCHAR(30) | when the run was accepted |
 | finished_at | VARCHAR(30) NULL | null while running |
 | failed_step | VARCHAR NULL | name of the failed step; null unless a step failed |
-| failure_reason | VARCHAR(64) NULL | `artifact upload failed` or null |
+| failure_reason | VARCHAR(64) NULL | `artifact upload failed`, `internal error` (Q-41, set with failed_step null) or null |
 
 ## run_steps (the definition's steps, in order)
 | column | type | notes |

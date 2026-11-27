@@ -24,9 +24,6 @@ class Settings:
     upload_timeout_seconds: float = 10.0
     # Simulated duration of each step, so a running build is visible in the demo.
     step_seconds: float = 0.5
-    # Event sender (PLAN.md Conventions): 3 attempts, 2 s timeout, waits 0.5 s then 1 s.
-    event_timeout_seconds: float = 2.0
-    event_backoff_seconds: tuple[float, ...] = (0.5, 1.0)
 
     @classmethod
     def from_env(cls) -> Settings:
