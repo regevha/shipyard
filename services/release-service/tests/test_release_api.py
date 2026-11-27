@@ -70,13 +70,11 @@ def test_request_version_is_strict_integer_at_least_one(client: TestClient, vers
     assert client.post("/releases", json=body).status_code == 422
 
 
-def test_request_huge_version_is_accepted_and_round_trips(client: TestClient) -> None:
+def test_request_huge_version_is_422_since_q40(client: TestClient) -> None:
     for version in (2**63, 2**200):
-        release = make_release(client, version=version)
-        assert release["artifact"]["version"] == version
-        assert client.get(f"/releases/{release['release_id']}").json()["artifact"]["version"] == (
-            version
-        )
+        response = client.post("/releases", json=request_body(version=version))
+        assert response.status_code == 422
+        assert response.json()["error"]["details"][0]["location"] == "body.artifact.version"
 
 
 def test_request_rejects_extra_fields_and_bad_bodies(client: TestClient) -> None:
@@ -345,7 +343,7 @@ def test_concurrent_decisions_have_exactly_one_winner(tmp_path: Path, fakes: Fak
     settings = Settings(
         database_url=f"sqlite:///{tmp_path}/r.db", dashboard_url="http://dashboard.test"
     )
-    with TestClient(create_app(settings, fakes.transport(), fakes.sleeps.append)) as client:
+    with TestClient(create_app(settings, fakes.transport(), fakes.sleep)) as client:
         rid = make_release(client)["release_id"]
 
         def attempt(i: int) -> int:
@@ -370,7 +368,7 @@ def test_many_concurrent_requests_all_succeed_on_a_file_db(tmp_path: Path, fakes
     settings = Settings(
         database_url=f"sqlite:///{tmp_path}/many.db", dashboard_url="http://dashboard.test"
     )
-    with TestClient(create_app(settings, fakes.transport(), fakes.sleeps.append)) as client:
+    with TestClient(create_app(settings, fakes.transport(), fakes.sleep)) as client:
         with ThreadPoolExecutor(32) as pool:
             codes = list(
                 pool.map(

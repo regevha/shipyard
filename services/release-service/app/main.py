@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import httpx
@@ -17,11 +16,11 @@ from app.routers import releases
 
 def create_app(
     settings: Settings | None = None,
-    transport: httpx.BaseTransport | None = None,
-    sleep: Callable[[float], None] = time.sleep,
+    transport: httpx.AsyncBaseTransport | None = None,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Settings default to the environment, read at startup. `transport` and `sleep` let tests
-    fake the dashboard (httpx.MockTransport) and skip the retry waits."""
+    fake the dashboard (httpx.MockTransport) and replace the retry waits (an async function)."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -31,6 +30,7 @@ def create_app(
         app.state.repo = ReleaseRepo(init_db(engine))
         app.state.events = EventSender(cfg, transport, sleep)
         yield
+        await app.state.events.close()
         engine.dispose()
 
     app = FastAPI(title="release-service", version="0.1.0", lifespan=lifespan)
