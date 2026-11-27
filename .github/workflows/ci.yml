@@ -88,12 +88,64 @@ jobs:
       - name: Check the copies
         run: python3 scripts/ci/check_shared_copy.py
 
+  stack:
+    name: stack tests (all four services)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # The runner is a fresh checkout (not an agent worktree); stack-tests require the slot explicitly.
+      SHIPYARD_SLOT: "0"
+    defaults:
+      run:
+        working-directory: stack-tests
+    steps:
+      - name: Check out
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.10"
+          enable-cache: true
+          cache-dependency-glob: |
+            services/*/uv.lock
+            stack-tests/uv.lock
+      # Before start-stack.sh (#154): venvs and CPython must not be installed inside its 30 s wait.
+      - name: Install locked dependencies of the four services and stack-tests
+        working-directory: .
+        run: |
+          for dir in services/pipeline-runner services/artifact-store services/release-service \
+            services/dashboard stack-tests; do
+            (cd "$dir" && uv sync --locked)
+          done
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy
+      - name: Stack tests (start and stop the stack themselves)
+        run: uv run pytest -v --durations=10
+      - name: Service logs on failure
+        if: failure()
+        working-directory: .
+        run: |
+          shopt -s nullglob
+          for log in /tmp/shipyard/slot0/*.log; do
+            echo "::group::$log"
+            tail -n 200 "$log"
+            echo "::endgroup::"
+          done
+
   # The one check to require in branch protection. Add every new job of this
   # workflow to `needs` so it cannot be skipped silently.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [contracts, service, shared-copy]
+    needs: [contracts, service, shared-copy, stack]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
