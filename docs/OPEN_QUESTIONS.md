@@ -467,8 +467,9 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   (`docs/tasks/T021.md`). Config holds it in each service's `pyproject.toml` (`[tool.coverage.report]`).
 - **Status:** `answered-by-user` (2026-11-26 21:28 Asia/Jerusalem, source: the lead session chat, not GitHub): the lead
   said it would treat 85 as the starting value unless the user wanted another number, and the user replied with the
-  single word below. GitHub: the lead's comment on PR #151 (T021) does not mention the threshold; the wording is not on
-  GitHub.
+  single word below. GitHub corroboration, both written by the lead session: the lead's comment on PR #151 (T021, 2026-11-26
+  19:57:39Z) says `Coverage fail_under = 85 confirmed by Nir.`, and the PR #151 description says `fail_under = 85 in all four
+  (lead confirms)` (it does not mention Nir).
 - **User decision (2026-11-26 21:28 Asia/Jerusalem, lead session chat):**
 
   > ok
