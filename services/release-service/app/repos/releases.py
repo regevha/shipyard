@@ -17,7 +17,7 @@ def _to_release(row: ReleaseRow) -> Release:
     status: ReleaseStatus = row.status  # type: ignore[assignment]
     return Release(
         release_id=UUID(row.release_id),
-        artifact=ArtifactRef(name=row.artifact_name, version=int(row.artifact_version)),
+        artifact=ArtifactRef(name=row.artifact_name, version=row.artifact_version),
         status=status,
         requested_by=row.requested_by,
         requested_at=row.requested_at,
@@ -45,7 +45,7 @@ class ReleaseRepo:
             row = ReleaseRow(
                 release_id=str(release_id),
                 artifact_name=request.artifact.name,
-                artifact_version=str(request.artifact.version),
+                artifact_version=request.artifact.version,
                 status="pending",
                 requested_by=request.requested_by,
                 requested_at=now,

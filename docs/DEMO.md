@@ -166,7 +166,7 @@ and promoted, and the dashboard built its four views from the events the service
   promote a name and version that was never built or uploaded.
 - The dashboard has no buttons and shows no promotion (Q-32, Q-14): decide and promote with curl on
   release-service.
-- A failed build can still show an artifact (#131, option (a), decided by Nir): when the upload
+- A failed build can still show an artifact (#131, option (a), decided by the project owner): when the upload
   times out after the store saved the bytes, the build fails but the artifact stays listed.
 - No request size caps on the runner, release-service or the dashboard's `POST /events` (#163);
   only artifact-store limits uploads (100 MiB).

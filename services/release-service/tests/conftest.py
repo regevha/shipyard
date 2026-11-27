@@ -32,6 +32,10 @@ class Fakes:
     events: list[dict[str, Any]] = field(default_factory=list)  # accepted (< 500) events
     event_attempts: list[dict[str, Any]] = field(default_factory=list)
     sleeps: list[float] = field(default_factory=list)
+
+    async def sleep(self, seconds: float) -> None:  # replaces the retry wait: records, no delay
+        self.sleeps.append(seconds)
+
     dashboard: Handler = dashboard_accepted
 
     def transport(self) -> httpx.MockTransport:
@@ -61,13 +65,19 @@ def settings() -> Settings:
 
 @pytest.fixture
 def app(fakes: Fakes, settings: Settings) -> FastAPI:
-    return create_app(settings, fakes.transport(), fakes.sleeps.append)
+    return create_app(settings, fakes.transport(), fakes.sleep)
 
 
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app) as c:  # the context manager runs the lifespan (create_all)
         yield c
+
+
+def settle(client: TestClient) -> None:
+    """Wait until no event send is pending (no sleeping)."""
+    events = client.app.state.events  # type: ignore[attr-defined]
+    assert events.wait_idle(10.0), "event sends still pending"
 
 
 def request_body(
@@ -80,6 +90,7 @@ def make_release(client: TestClient, **kwargs: Any) -> dict[str, Any]:
     response = client.post("/releases", json=request_body(**kwargs))
     assert response.status_code == 201, response.text
     body: dict[str, Any] = response.json()
+    settle(client)
     return body
 
 
@@ -89,4 +100,5 @@ def decide(
     response: httpx.Response = client.post(
         f"/releases/{release_id}/decision", json={"decision": decision, "decided_by": by}
     )
+    settle(client)
     return response

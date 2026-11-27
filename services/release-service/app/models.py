@@ -17,7 +17,9 @@ ArtifactName = Annotated[
         strict=True, min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
     ),
 ]
-ArtifactVersion = Annotated[int, Field(strict=True, ge=1)]
+# events.yml ArtifactVersion: at most 2^63-1 (Q-40), so the version fits a database integer.
+MAX_VERSION = 9223372036854775807
+ArtifactVersion = Annotated[int, Field(strict=True, ge=1, le=MAX_VERSION)]
 Actor = Annotated[str, StringConstraints(strict=True, min_length=1)]
 Decision = Literal["approved", "rejected"]
 ReleaseStatus = Literal["pending", "approved", "rejected"]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import String
+from sqlalchemy import BigInteger, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -15,8 +15,8 @@ class ReleaseRow(Base):
 
     release_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     artifact_name: Mapped[str] = mapped_column(String(100))
-    # Text, not INTEGER: the contract sets no upper bound on a version; SQLite stops at 2^63-1.
-    artifact_version: Mapped[str] = mapped_column(String)
+    # The contract caps a version at 2^63-1 (Q-40), so it fits a 64-bit integer.
+    artifact_version: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(16))
     requested_by: Mapped[str] = mapped_column(String)
     requested_at: Mapped[str] = mapped_column(String(30))

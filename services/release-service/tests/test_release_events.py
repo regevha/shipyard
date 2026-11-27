@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from conftest import Fakes, decide, make_release, request_body
+from conftest import Fakes, decide, make_release, request_body, settle
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openapi_conformance import find_contract, schema_validator
@@ -98,6 +98,7 @@ def test_failed_decision_and_failed_request_send_no_event(client: TestClient, fa
     assert decide(client, release["release_id"], "rejected").status_code == 409
     assert client.post("/releases", json={"artifact": {}}).status_code == 422
     assert client.post(f"/releases/{release['release_id']}/decision", json={}).status_code == 422
+    settle(client)
     assert len(fakes.events) == n
     assert [e["type"] for e in fakes.events] == ["release.requested", "release.decided"]
 
@@ -144,6 +145,7 @@ def test_sender_retries_5xx_reusing_event_id_then_succeeds(app: FastAPI, fakes: 
     fakes.dashboard = flaky
     with TestClient(app) as client:
         assert client.post("/releases", json=request_body()).status_code == 201
+        settle(client)
     assert len(fakes.event_attempts) == 3
     assert len({e["event_id"] for e in fakes.event_attempts}) == 1
     assert fakes.sleeps == [0.5, 1.0]
@@ -153,6 +155,7 @@ def test_sender_does_not_retry_4xx_and_never_raises(app: FastAPI, fakes: Fakes) 
     fakes.dashboard = lambda request: httpx.Response(422)
     with TestClient(app) as client:
         assert client.post("/releases", json=request_body()).status_code == 201
+        settle(client)
     assert len(fakes.event_attempts) == 1 and fakes.sleeps == []
 
 
@@ -160,6 +163,10 @@ def test_sender_swallows_unexpected_errors(settings: Settings) -> None:
     def boom(request: httpx.Request) -> httpx.Response:
         raise RuntimeError("bug")
 
-    app = create_app(settings, httpx.MockTransport(boom), lambda _s: None)
+    async def no_wait(_s: float) -> None:
+        return None
+
+    app = create_app(settings, httpx.MockTransport(boom), no_wait)
     with TestClient(app) as client:
         assert client.post("/releases", json=request_body()).status_code == 201
+        settle(client)

@@ -5,7 +5,7 @@ file is not in `docs/team/SYNC_FILES`, so a team sync never changes it. Each rul
 
 ## Fix rounds (Q-05, issue #27)
 
-User decision (Nir, 2026-11-26):
+User decision (the project owner, 2026-11-26):
 
 > #27 Q-05: after 2 fix rounds with Blocking items still open, stop and report (Shipyard-only rule).
 
