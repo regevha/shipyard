@@ -100,7 +100,7 @@ lead applied four doc fixes in d3b39b9, and a verify APPROVE followed.
 - #136 wave 2 scaffold notes from the T019 review: `start-stack.sh` stops the slot's stack and refuses to wipe while a
   port is taken; the error mapping is in T020, T021 and T022.
 - #148 stop and start scripts accept a dead pid file: verified in the T021 review.
-- #131 `needs-decision`, a failed build can still leave a stored artifact: Nir chose option (a), recorded as Q-37.
+- #131 `needs-decision`, a failed build can still leave a stored artifact: the project owner chose option (a), recorded as Q-37.
 - #154 the CI `stack` job syncs the four service venvs before `start-stack.sh`: done in T028 (PR #174).
 
 ### Deferred polish (by issue number)
