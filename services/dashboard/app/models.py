@@ -66,8 +66,8 @@ Name = Annotated[
 StepName = Annotated[str, Field(min_length=1)]
 Actor = Annotated[str, Field(min_length=1)]
 Checksum = Annotated[str, _pattern(_CHECKSUM_RE, "64 lowercase hex characters")]
-Version = Annotated[int, Field(ge=1)]
-FailureReason = Literal["artifact upload failed"]
+Version = Annotated[int, Field(ge=1, le=9223372036854775807)]
+FailureReason = Literal["artifact upload failed", "internal error"]
 StepStatus = Literal["pending", "running", "passed", "failed", "skipped"]
 BuildStatus = Literal["running", "passed", "failed"]
 ReleaseStatus = Literal["pending", "approved", "rejected"]
@@ -139,10 +139,12 @@ class BuildFinishedData(Strict):
         if self.outcome == "passed" or self.failure_reason is not None:
             if self.failed_step is not None:
                 raise ValueError("failed_step must be null")
-            if any(s != "passed" for s in statuses):
-                raise ValueError("every step must have passed")
             if (self.outcome == "passed") == (self.failure_reason is not None):
-                raise ValueError("failure_reason is set exactly when the upload failed")
+                raise ValueError("failure_reason is set exactly when the run failed without a step")
+            if self.failure_reason == "internal error":
+                self._interrupted(statuses)
+            elif any(s != "passed" for s in statuses):
+                raise ValueError("every step must have passed")
             return self
         if self.failed_step is None:
             raise ValueError("failed_step is required when a step failed")
@@ -158,6 +160,18 @@ class BuildFinishedData(Strict):
         ):
             raise ValueError("steps before the failed one passed, steps after it are skipped")
         return self
+
+    def _interrupted(self, statuses: list[StepStatus]) -> None:
+        """InterruptedRunSteps: passed first, at most one failed, then skipped."""
+        if (
+            any(s not in ("passed", "failed", "skipped") for s in statuses)
+            or statuses.count("failed") > 1
+        ):
+            raise ValueError("steps must be passed, failed or skipped, at most one failed")
+        rank = {"passed": 0, "failed": 1, "skipped": 2}
+        ranks = [rank[s] for s in statuses]
+        if ranks != sorted(ranks):
+            raise ValueError("passed steps first, then the failed one, then skipped ones")
 
 
 class ReleaseRequestedData(Strict):
