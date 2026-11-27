@@ -465,8 +465,9 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 ### Q-38 Coverage threshold per service
 - **Point:** the lead proposed `fail_under = 85` for each of the four services; T021 proposed the same in its hand-off
   (`docs/tasks/T021.md`). Config holds it in each service's `pyproject.toml` (`[tool.coverage.report]`).
-- **Status:** `answered-by-user` (2026-11-26, as reported by the lead): the user agreed to the proposal. The reply is not
-  in the GitHub comments the project-manager searched; the lead should confirm the exact wording.
-- **User decision (2026-11-26, per the lead):**
+- **Status:** `answered-by-user` (2026-11-26 21:28 Asia/Jerusalem, source: the lead session chat, not GitHub): the lead
+  said it would treat 85 as the starting value unless the user wanted another number, and the user replied with the
+  single word below.
+- **User decision (2026-11-26 21:28 Asia/Jerusalem, lead session chat):**
 
-  > fail_under = 85 in each service; the user replied "ok" to the lead's proposal
+  > ok

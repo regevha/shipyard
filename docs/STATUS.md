@@ -27,12 +27,14 @@ Fix round counts are from the lead's PR comments (T026 and T027 each had a verif
 ## Numbers that matter
 
 - Services: four Python/FastAPI services on SQLite, one file each, ports 18000 + 10 x slot + service index.
-- Coverage: `fail_under = 85` in all four service `pyproject.toml` files (checked in the worktree). Recorded numbers:
-  T025 73 unit/API tests, 97% coverage; T022 shared tests (27 per service, reported by the reviewer), `app/errors.py` 98%.
-  Coverage for T023, T024, T026 and T027 is not recorded in the hand-offs or PR comments; the lead should supply it.
-- Stack suite: 10 test functions in `stack-tests/tests/` (inferred: 8 in `test_stack_flow.py`, 1 concurrency, 1 upload
-  failure; parametrized cases would add more). The lead's note says 15; the project-manager could not reconcile the two
-  counts without running the suite. Duration: about 29-31 s on slot 6 (T028 hand-off).
+- Coverage (`pytest --cov=app` on each task's merged head, from the reviewer evidence on the PRs; the lead's figures):
+  dashboard T023 97.31% (89 tests); pipeline-runner T024 98.90% (92 tests); artifact-store T025 97.14% (73 tests);
+  release-service T026 97.46% (114 tests); shared modules T022, `app/errors.py` 98% (27 tests per service).
+  `fail_under = 85` in all four service `pyproject.toml` files (Q-38). T027 is static HTML/JS with no coverage tool
+  (its `files_touched` allows none); its gate was the browser smoke test plus the reviewer's and ux-reviewer's browser checks.
+- Stack suite: 15 tests pass (pytest "15 passed"; some functions are parametrized, e.g. the bad-name test has 6 cases).
+  Observed by the tester (26.6-31 s, 5 runs), the reviewer (3 runs, 26.6-27.4 s) and CI ("15 passed in 11.55 s" in the
+  stack job). Roughly 27-31 s locally, about 12 s in CI.
 - 100-concurrent-run test (`test_stack_concurrency.py`): every run reaches its final state; the dashboard lists each
   build once; one artifact per passed build.
 - Real-server checks: T024, 500 runs and 1002 events with 0 misses; T025, 0 misses on POST-then-GET.
@@ -72,14 +74,21 @@ Fix round counts are from the lead's PR comments (T026 and T027 each had a verif
 
 ### Open issues labelled `task` (not yet closed; the lead decides)
 
-- #173 T027 acceptance A4 passes vacuously (the fetch-literal grep matches nothing). The reviewer verified the property by
-  code and a runtime log. The lead's `done` for T027 should account for this.
+- #173 T027 acceptance A4 passes vacuously (the fetch-literal grep matches nothing). The lead keeps T027 `done`: the
+  property the check was meant to prove (the page calls only GET /builds, /artifacts and /releases on the same origin) was
+  verified by the reviewer twice, by code and by a runtime request log in headless Chrome. #173 is the follow-up to fix
+  the acceptance command itself.
 - #152 `check_shared_copy.py`: use argparse. #149 guard the `env -u SHIPYARD_SLOT` acceptance. #150 T025 octet-stream
   request body and 413 ordering (inferred: T025 uses the dependency approach; the lead to check). #157 `differences()`
   enum and const. #159 pin the hand-written `ErrorEnvelope` to `errors.yml`. #147 `environment.md` error-envelope row.
   #146 mark the Q-11 retry numbers as the default (assumed), not a user decision.
-- #148 (`task`) and #132, #136 (`task`): inferred to be addressed by T021 (the pid-file and start-script fixes) and T024
-  (10 s upload timeout, recorded in its hand-off). The lead should check and close.
+
+### Closed by the lead
+
+- #132 wave 2 runner upload timeout: 10 s, recorded in the T024 hand-off.
+- #136 wave 2 scaffold notes from the T019 review: `start-stack.sh` stops the slot's stack and refuses to wipe while a
+  port is taken; the error mapping is in T020, T021 and T022.
+- #148 stop and start scripts accept a dead pid file: verified in the T021 review.
 
 ### Deferred polish (by issue number)
 
