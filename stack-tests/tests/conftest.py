@@ -14,19 +14,33 @@ import pytest
 from contract import Contracts
 from stack import Stack, read_ports, run_script, slot_env
 
+STOPS_DASHBOARD = "stops_dashboard"
 STOPS_ARTIFACT_STORE = "stops_artifact_store"
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
+        f"{STOPS_DASHBOARD}: pauses the dashboard (SIGSTOP, then SIGCONT), so it runs after the "
+        "ordinary tests and before the ones that stop artifact-store",
+    )
+    config.addinivalue_line(
+        "markers",
         f"{STOPS_ARTIFACT_STORE}: stops artifact-store, so it runs after every other test",
     )
 
 
+def _order(item: pytest.Item) -> int:
+    if item.get_closest_marker(STOPS_ARTIFACT_STORE) is not None:
+        return 2  # artifact-store never comes back: last
+    if item.get_closest_marker(STOPS_DASHBOARD) is not None:
+        return 1  # the dashboard comes back, but events sent meanwhile may be lost
+    return 0
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    # Stable sort: tests that break the stack go last, whatever order they were collected in.
-    items.sort(key=lambda item: item.get_closest_marker(STOPS_ARTIFACT_STORE) is not None)
+    # Stable sort: tests that disturb the stack go last, whatever order they were collected in.
+    items.sort(key=_order)
 
 
 @pytest.fixture(scope="session")
