@@ -107,16 +107,16 @@ acceptance:
   - |-
     python3 -I scripts/team/check_brief_quotes.py  # exits 0
   - |-
-    grep -c '^## Wave 2 setup (T019, approved)$' docs/team/environment.md && grep -q '^Status: approved by Nir on #25, 2026-11-26' docs/team/environment.md && ! grep -nE 'proposal, T019|until (the user )?approve|once approved|still a proposal|docs/contracts/<service>' docs/team/environment.md  # prints 1, exits 0
+    grep -c '^## Wave 2 setup (T019, approved)$' docs/team/environment.md && grep -q '^Status: approved by the project owner on #25, 2026-11-26' docs/team/environment.md && ! grep -nE 'proposal, T019|until (the user )?approve|once approved|still a proposal|docs/contracts/<service>' docs/team/environment.md  # prints 1, exits 0
   - |-
     grep -qF '18000 + 10 x slot + service index' docs/team/environment.md && grep -q 'refuses to start' docs/team/environment.md && grep -q 'any other 4xx is answered as 422' docs/team/environment.md  # exits 0 (#136 points written into the setup)
   - |-
-    grep -qF '| [T019](tasks/T019.yml) ([#25](https://github.com/regevha/shipyard/issues/25)) |' docs/PLAN.md && grep -q 'done (PR #135, 357eb3f; approved by Nir on #25) |$' docs/PLAN.md && grep -q 'done (PR #133) |$' docs/PLAN.md && for t in 21 22 23 24 25 26 27 28; do grep -q "^| \[T0$t\](tasks/T0$t.yml) .* | todo |$" docs/PLAN.md || { echo "row T0$t"; exit 1; }; done  # exits 0
+    grep -qF '| [T019](tasks/T019.yml) ([#25](https://github.com/regevha/shipyard/issues/25)) |' docs/PLAN.md && grep -q 'done (PR #135, 357eb3f; approved by the project owner on #25) |$' docs/PLAN.md && grep -q 'done (PR #133) |$' docs/PLAN.md && for t in 21 22 23 24 25 26 27 28; do grep -q "^| \[T0$t\](tasks/T0$t.yml) .* | todo |$" docs/PLAN.md || { echo "row T0$t"; exit 1; }; done  # exits 0
   - |-
     test -z "$(git diff --name-only origin/main...HEAD | grep -vxF -f <(python3 -c "import yaml; print('\n'.join(yaml.safe_load(open('docs/tasks/T020.yml'))['files_touched'] + ['docs/tasks/T020.md']))"))"  # exits 0: only the listed files changed
   - "reviewer APPROVE: specs cover every user decision listed in docs/PLAN.md § Waves, file lists match the layout, acceptance commands runnable (review gate, not a command)"
 summary: >
-  Architect task between waves 1 and 2, after Nir approved the T019 setup on #25 (2026-11-26). Marks the setup
+  Architect task between waves 1 and 2, after the project owner approved the T019 setup on #25 (2026-11-26). Marks the setup
   section of docs/team/environment.md approved and removes the remaining proposal wording (#36 included:
   contracts are contracts/*.yml); writes the #136 points into it (start-stack.sh stops or refuses before wiping;
   other 4xx answer 422 validation_failed, no contract change). Applies the #121 contract change (newline guard on
