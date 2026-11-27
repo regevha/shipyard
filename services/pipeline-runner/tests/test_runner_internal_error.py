@@ -115,6 +115,27 @@ def test_q41_http_upload_failure_keeps_upload_reason(
     assert finished[0]["data"]["failure_reason"] == "artifact upload failed"
 
 
+def test_q41_non_http_error_inside_the_upload_is_an_internal_error(
+    client: TestClient, fakes: Fakes
+) -> None:
+    def artifact(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("not an httpx error")
+
+    fakes.artifact = artifact  # raised inside the transport, so the upload's own try/except runs
+    build_id = client.post("/runs", json=steps_body("a", "b")).json()["build_id"]
+    settle(client)
+    run = client.get(f"/runs/{build_id}").json()
+    RUN.validate(run)
+    assert run["status"] == "failed"
+    assert run["failed_step"] is None
+    assert run["failure_reason"] == "internal error"
+    assert [s["status"] for s in run["steps"]] == ["passed", "passed"]
+    finished = [e for e in fakes.events if e["type"] == "build.finished"]
+    assert len(finished) == 1
+    FINISHED.validate(finished[0])
+    assert finished[0]["data"]["failure_reason"] == "internal error"
+
+
 def test_q41_final_state_already_committed_is_kept(
     client: TestClient, app: FastAPI, fakes: Fakes, monkeypatch: pytest.MonkeyPatch
 ) -> None:

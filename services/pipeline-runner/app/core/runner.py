@@ -97,7 +97,7 @@ class Runner:
                         "X-Checksum-SHA256": hashlib.sha256(body).hexdigest(),
                     },
                 )
-        except httpx.HTTPError as exc:  # network error or timeout: the upload failed
+        except httpx.TransportError as exc:  # network error or timeout: the upload failed
             log.warning("artifact upload of build %s failed: %s", run.build_id, type(exc).__name__)
             return False
         if response.status_code != 201:
