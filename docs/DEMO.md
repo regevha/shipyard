@@ -35,7 +35,6 @@ its own. Each `>>>` line says what to look at, and the script then waits 6 s so 
 
 ```sh
 SLOT="${SHIPYARD_SLOT:-0}"
-export SHIPYARD_SLOT="$SLOT"
 RUNNER="http://127.0.0.1:$((18000 + 10 * SLOT))"
 STORE="http://127.0.0.1:$((18001 + 10 * SLOT))"
 RELEASES="http://127.0.0.1:$((18002 + 10 * SLOT))"
@@ -84,14 +83,19 @@ curl -fsS "$RUNNER/runs/$FAIL_ID"; echo
 look "dashboard Failures: shipyard-web, failure 'step \"test\" failed'; no new artifact"
 
 # 4. The artifact the passing build uploaded: download it and check its SHA-256.
-curl -fsS -D /tmp/shipyard-demo-headers.txt -o /tmp/shipyard-demo-artifact.bin \
+#    Scratch files go to the slot's data dir, which the next start wipes.
+SCRATCH="/tmp/shipyard/slot$SLOT"
+mkdir -p "$SCRATCH"
+curl -fsS -D "$SCRATCH/demo-headers.txt" -o "$SCRATCH/demo-artifact.bin" \
   "$STORE/artifacts/shipyard-api/versions/1"
-python3 - <<'PY'
+python3 - "$SCRATCH" <<'PY'
 import hashlib
+import sys
 
-body = open("/tmp/shipyard-demo-artifact.bin", "rb").read()
+scratch = sys.argv[1]
+body = open(f"{scratch}/demo-artifact.bin", "rb").read()
 headers = dict(
-    line.split(": ", 1) for line in open("/tmp/shipyard-demo-headers.txt").read().splitlines() if ": " in line
+    line.split(": ", 1) for line in open(f"{scratch}/demo-headers.txt").read().splitlines() if ": " in line
 )
 sent = {k.lower(): v for k, v in headers.items()}["x-checksum-sha256"]
 assert hashlib.sha256(body).hexdigest() == sent, "checksum mismatch"
@@ -158,6 +162,8 @@ and promoted, and the dashboard built its four views from the events the service
 - Events are plain HTTP calls, no queue (Q-27): senders try three times, then drop the event, so
   the dashboard can miss an event when it is down. A hanging dashboard can delay the senders'
   background work and, under load, other requests to those services (#171).
+- release-service does not check that the artifact exists (Q-16): you can request, approve and
+  promote a name and version that was never built or uploaded.
 - The dashboard has no buttons and shows no promotion (Q-32, Q-14): decide and promote with curl on
   release-service.
 - A failed build can still show an artifact (#131, option (a), decided by Nir): when the upload
