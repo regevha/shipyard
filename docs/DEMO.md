@@ -159,18 +159,27 @@ and promoted, and the dashboard built its four views from the events the service
   uploads nothing.
 - No retries of the upload (Q-36, #120): one failed or timed-out attempt (timeout 10 s) fails the
   build with `artifact upload failed`.
-- Events are plain HTTP calls, no queue (Q-27): senders try three times, then drop the event, so
-  the dashboard can miss an event when it is down. A hanging dashboard can delay the senders'
-  background work and, under load, other requests to those services (#171).
+- Events are plain HTTP calls, no queue until wave 3 (Q-27): senders try up to three times within
+  5 s, then drop the event, so the dashboard can miss an event when it is down. A dashboard that
+  hangs loses the events sent meanwhile (dropped after 5 s, no queue until wave 3); it no longer
+  delays other requests to the services that send them (#171, Q-42).
+- pipeline-runner's simulated steps and its artifact upload still run on its request-handler
+  threads, so under load they can delay its other requests (Q-42 follow-up, the project owner;
+  they move off those threads with the queue in wave 3).
+- An unexpected error inside a run fails the build with reason `internal error` (#167, Q-41):
+  `failed_step` is null, the step that was running (if any) is failed and the steps after it are
+  skipped.
 - release-service does not check that the artifact exists (Q-16): you can request, approve and
   promote a name and version that was never built or uploaded.
 - The dashboard has no buttons and shows no promotion (Q-32, Q-14): decide and promote with curl on
   release-service.
 - A failed build can still show an artifact (#131, option (a), decided by the project owner): when the upload
   times out after the store saved the bytes, the build fails but the artifact stays listed.
-- No request size caps on the runner, release-service or the dashboard's `POST /events` (#163);
-  only artifact-store limits uploads (100 MiB).
-- The dashboard answers 500 for a `release.requested` event with an artifact version above
-  2^63-1 (#170, deferred); release-service accepts such versions, so that release never reaches
-  the dashboard.
+- No request size caps on the runner, release-service or the dashboard's `POST /events` (#163,
+  Q-39): wave 3. Only artifact-store limits uploads (100 MiB).
+- Artifact versions go up to 2^63-1 (9223372036854775807); a larger version is refused with 422
+  everywhere a version is received (Q-40).
 - The dashboard page shows at most 200 items per section (no paging UI).
+- Rare cases are ignored until the end of wave 3 (the project owner, Q-41 follow-up): for example,
+  if even the write that marks a crashed run failed is refused (the database is gone), the run
+  stays `running`.
