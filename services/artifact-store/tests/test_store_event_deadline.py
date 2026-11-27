@@ -113,9 +113,9 @@ def test_q42_event_dropped_at_deadline(caplog: pytest.LogCaptureFixture) -> None
     sender = EventSender(
         "http://dash.test",
         httpx.MockTransport(hang),
-        deadline=0.4,
-        attempt_timeout=0.25,
-        waits=(0.05, 0.5),
+        deadline=1.0,
+        attempt_timeout=0.6,
+        waits=(0.1, 2.0),
     )
 
     async def scenario() -> float:
@@ -129,10 +129,10 @@ def test_q42_event_dropped_at_deadline(caplog: pytest.LogCaptureFixture) -> None
 
     with caplog.at_level(logging.WARNING, logger="artifact-store.events"):
         took = asyncio.run(scenario())
-    # attempt 1 (0.25 s), wait 0.05, attempt 2 capped to the 0.1 s left; the 0.5 s wait would pass
-    # the deadline, so nothing more starts
+    # attempt 1 (0.6 s), wait 0.1, attempt 2 capped to the 0.3 s left (1.0 s in all; 1.3 s if the
+    # attempt timeout were not capped); the 2 s wait would pass the deadline, so nothing more starts
     assert len(calls) == 2
-    assert took < 0.4 + 0.2
+    assert 0.9 < took < 1.15
     assert "dropped at the deadline" in caplog.text
 
 

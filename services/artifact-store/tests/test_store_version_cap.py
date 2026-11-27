@@ -3,6 +3,7 @@
 from datetime import datetime
 from io import BytesIO
 
+import pytest
 from conftest import BUILD, Dashboard
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -68,3 +69,12 @@ def test_q40_store_never_assigns_above_max(
     assert client.get(f"/artifacts/app/versions/{MAX_VERSION}").content == b"top"  # no new row
     # another name is unaffected
     assert client.post(f"/artifacts/other?build_id={BUILD}", content=b"x").status_code == 201
+
+
+def test_q40_repo_create_refuses_above_max(client: TestClient) -> None:
+    seed_max(client)
+    repo: ArtifactRepo = client.app.state.repo  # type: ignore[attr-defined]
+    before = blob_files(client)
+    with pytest.raises(RuntimeError, match="version cap reached"):
+        repo.create("app", BUILD, "0" * 64, 4, BytesIO(b"more"))
+    assert blob_files(client) == before
