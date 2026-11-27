@@ -122,19 +122,22 @@ acceptance:
   - |-
     python3 -c "
     import yaml, glob
-    bad = []
+    bad, seen = [], []
     def walk(n, path):
         if isinstance(n, dict):
-            if 'version' in (n.get('properties') or {}) and path[-1:] != ('Envelope',):
-                v = n['properties']['version']
+            if 'version' in (n.get('properties') or {}):
+                seen.append('/'.join(path)); v = n['properties']['version']
                 if v.get('\$ref', '').split('#')[-1] != '/\$defs/ArtifactVersion': bad.append('/'.join(path))
-            if n.get('name') == 'version' and n.get('in') == 'path' and not n['schema']['\$ref'].endswith('/ArtifactVersion'): bad.append('/'.join(path))
+            if n.get('name') == 'version' and n.get('in') == 'path':
+                seen.append('/'.join(path))
+                if not n['schema']['\$ref'].endswith('/ArtifactVersion'): bad.append('/'.join(path))
             for k, v in n.items(): walk(v, path + (str(k),))
         elif isinstance(n, list):
             for i, v in enumerate(n): walk(v, path + (str(i),))
     for f in sorted(glob.glob('contracts/*.yml')): walk(yaml.safe_load(open(f)), (f,))
     assert not bad, bad
-    print('every version capped')"  # prints every version capped (every version schema in the six files is a ref to ArtifactVersion)
+    assert len(seen) >= 3, seen
+    print('every version capped:', len(seen))"  # prints every version capped: 3 (Artifact, ArtifactRef, the download path parameter; every version schema in the six files is a ref to ArtifactVersion)
   - |-
     python3 -c "
     import yaml, glob
@@ -176,7 +179,7 @@ acceptance:
   - |-
     for q in 39 40 41 42 43; do grep -A12 "^### Q-$q " docs/OPEN_QUESTIONS.md | grep -q 'answered-by-user' || { echo "Q-$q"; exit 1; }; done && for t in 30 31 32 33 34; do grep -q "^| \[T0$t\](tasks/T0$t.yml) .* | todo |$" docs/PLAN.md || { echo "row T0$t"; exit 1; }; done && grep -q 'Wave 2 follow-ups (the project owner, 2026-11-27' docs/PLAN.md && grep -q 'Not in wave 3: the React dashboard' docs/PLAN.md  # exits 0
   - |-
-    ! git diff origin/main...HEAD -U0 | grep '^+' | grep -wE 'Nir|Regev'  # exits 0: no personal name in the added text (the lead's instruction)
+    ! git diff origin/main...HEAD -U0 | grep '^+' | grep -wE 'N[i]r|R[e]gev'  # exits 0: no personal name in the added text (the lead's instruction)
   - |-
     test -z "$(git diff --name-only origin/main...HEAD | grep -vxF -f <(python3 -c "import yaml; print('\n'.join(yaml.safe_load(open('docs/tasks/T029.yml'))['files_touched'] + ['docs/tasks/T029.md']))"))"  # exits 0: only the listed files changed
   - "reviewer APPROVE: every decision of 2026-11-27 recorded and traced to a task or to wave 3, contract changes minimal and consistent across the six files, specs runnable and disjoint (review gate, not a command)"
