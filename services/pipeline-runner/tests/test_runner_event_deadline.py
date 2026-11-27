@@ -107,6 +107,20 @@ def test_q42_hanging_dashboard_does_not_delay_other_requests(tmp_path: Path) -> 
             w.join()
         assert statuses == [202] * 80
         with httpx.Client(base_url=base, timeout=30) as http:
+            # the runs' own work (steps and upload, worker threads, wave 3) is not what #171 is
+            # about: wait until all 80 runs are final, then time the unrelated GET
+            polling_from = time.monotonic()
+            give_up = polling_from + 60
+            open_runs = set(ids)
+            while open_runs and time.monotonic() < give_up:
+                for build_id in list(open_runs):
+                    if http.get(f"/runs/{build_id}").json()["status"] != "running":
+                        open_runs.discard(build_id)
+                time.sleep(0.05)
+            assert not open_runs
+            # with the blocking sender the runs themselves waited for the hung dashboard (about
+            # 13 s for these 80); now delivery is off the worker threads: about 1 s, bound 6 s
+            assert time.monotonic() - polling_from < 6
             # the dashboard is still hanging: events are pending when the GET is timed
             assert sender.pending() >= 1
             start_at = time.monotonic()
