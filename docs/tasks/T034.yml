@@ -1,0 +1,66 @@
+id: T034
+title: "Wave 2 follow-up F3 stack tests: version cap end to end (#170), stopped dashboard under load (#171), DEMO limitations"
+owner: tester
+branch: T034-stack-followups
+mode: team
+ui: false
+wave: 2
+depends_on: [T029, T030, T031, T032, T033]
+migration: false
+read_first:
+  - docs/PLAN.md#waves
+  - docs/PLAN.md#conventions
+  - docs/OPEN_QUESTIONS.md#q-40-artifact-versions-above-263-1
+  - docs/OPEN_QUESTIONS.md#q-41-an-unexpected-error-in-a-runs-background-task
+  - docs/OPEN_QUESTIONS.md#q-42-event-senders-blocked-by-a-hanging-dashboard
+  - docs/DEMO.md
+  - docs/tasks/T028.md
+  - docs/tasks/T029.md
+  - docs/tasks/T030.md
+  - docs/tasks/T031.md
+  - docs/tasks/T032.md
+  - docs/tasks/T033.md
+files_touched:
+  - stack-tests/tests/**
+  - docs/DEMO.md
+acceptance:
+  - |-
+    cd stack-tests && export SHIPYARD_SLOT=98 && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -v  # exits 0 (the tests start and stop the stack in slot 98 themselves)
+  - |-
+    cd stack-tests && export SHIPYARD_SLOT=98 && uv run pytest -q tests/test_stack_followups.py::test_q40_version_cap_end_to_end "tests/test_stack_followups.py::test_q42_stopped_dashboard_does_not_delay_service[release-service]" "tests/test_stack_followups.py::test_q42_stopped_dashboard_does_not_delay_service[artifact-store]" "tests/test_stack_followups.py::test_q42_stopped_dashboard_does_not_delay_service[pipeline-runner]"  # exits 0
+  - |-
+    cd stack-tests && export SHIPYARD_SLOT=98 && for i in 1 2 3; do uv run pytest -q tests/test_stack_concurrency.py || exit 1; done  # exits 0: the T029 flake (running with a failed step) is gone
+  - |-
+    python3 -c "import re,sys; t=open('docs/DEMO.md').read(); b=re.findall(r'^\`\`\`sh\n(.*?)^\`\`\`', t, re.S|re.M); assert len(b)==1, len(b); open('/tmp/t034-demo.sh','w').write(b[0])" && SHIPYARD_SLOT=98 DEMO_PAUSE=0 bash -euo pipefail /tmp/t034-demo.sh && SHIPYARD_SLOT=98 scripts/dev/stop-stack.sh  # exits 0: the walkthrough still runs
+  - |-
+    ! grep -n '#170' docs/DEMO.md && grep -q '#171' docs/DEMO.md && grep -qi 'internal error' docs/DEMO.md && grep -q '#163' docs/DEMO.md  # exits 0: limitations updated
+  - |-
+    git diff --quiet origin/main -- stack-tests/pyproject.toml stack-tests/uv.lock .github/workflows/ci.yml  # exits 0: no new package, CI unchanged
+  - |-
+    rm -rf /tmp/shipyard/slot98 && python3 -c "import socket,sys; sys.exit(any(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in range(18980, 18984)))"  # exits 0: slot cleaned up, no port of slot 98 open
+  - |-
+    python3 scripts/ci/check_task_scope.py T034-stack-followups origin/main  # exits 0
+  - |-
+    gh api "repos/regevha/shipyard/commits/$(git rev-parse HEAD)/check-runs" --jq '.check_runs[] | select(.name=="ci-ok") | .conclusion' | sort -u | grep -qx success  # exits 0, on the PR head (stack job included)
+  - "reviewer APPROVE; the lead runs the DEMO walkthrough once in slot 0 (review gates, not commands)"
+summary: >
+  Group F3 of the wave 2 follow-ups, the last; runs alone after T030-T033 are merged. Adds
+  stack-tests/tests/test_stack_followups.py, using the existing stack fixture, Stack helpers and contract checker
+  (every response checked). test_q40_version_cap_end_to_end (Q-40, #170): POST /releases with artifact version
+  9223372036854775807 (2^63-1) is 201 and the dashboard's GET /releases shows that exact version (the dashboard
+  answered 500 for it before T030); with 2^63 it is 422 validation_failed at release-service, artifact-store's GET
+  /artifacts/{name}/versions/9223372036854775808 is 422, and the dashboard's POST /events with such a version is
+  422. test_q42_stopped_dashboard_does_not_delay_service[release-service|artifact-store|pipeline-runner] (Q-42,
+  #171): stop the dashboard process with SIGSTOP (its pid file; a stopped process keeps its listening socket, so
+  connections are accepted and never answered), send 80 concurrent writes to the service (POST /releases, uploads,
+  POST /runs), then while their events are pending one unrelated GET on that service must answer within 1.0 s;
+  always SIGCONT the dashboard in a finally block and wait until it answers again, so later tests see a working
+  dashboard; events sent while it was stopped may be lost (dropped after the 5 s deadline). Order these tests so
+  they cannot disturb the others, as conftest.py already does for stops_artifact_store. #167 (Q-41) cannot be
+  provoked from outside a service; it is covered by T033's unit tests, not here. Run the concurrency suite three
+  times (the running-with-a-failed-step flake found in T029 must be gone after T033). Update docs/DEMO.md
+  § Known limitations: drop the #170 line; #171 becomes "a dashboard that hangs loses the events sent meanwhile
+  (dropped after 5 s, no queue until wave 3)" with no delay to other requests; add that an unexpected runner error
+  fails the build with reason internal error (#167); #163 stays, now marked wave 3 (Q-39). The walkthrough block
+  must still run. If a stack test finds a defect in a service, report it to the lead with the failing test; never
+  fix service code here. Hand-off docs/tasks/T034.md.

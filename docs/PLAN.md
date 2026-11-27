@@ -73,10 +73,35 @@ artifact per passed build, named after the pipeline), Q-36 and #120 (upload afte
 decided by Nir on 2026-11-26: option (a), a failed build can show an artifact (Q-37). The specs marked it
 `assumed (#131)`; that assumption now stands as the decision.
 
-**Wave 3: hardening (outline only; confirmed by the user, Q-27).** Replace the HTTP event calls with a real queue (the
-contracts keep the event
-payloads); auth between services if not settled earlier; retries, persistence and failure handling; e2e browser
-flows (e2e-tester); possibly a React dashboard (user decision at that point).
+**Wave 2 follow-ups (the project owner, 2026-11-27; T029-T034).** After wave 2 closed, the project owner decided
+#163, #170, #167 and #171 (Q-39 to Q-42). T029 (architect) recorded the decisions, made the two contract changes
+(#170 version cap, #167 `internal error`; table below) and wrote the specs. #163 needs no task now (wave 3, Q-39).
+`contracts/**` is frozen again from the start of T030 until T034 is merged, except for a Blocking defect through the
+lead. No new package (`asyncio` and `httpx.AsyncClient` are already available). At most 3 build agents at a time;
+tasks of one group have disjoint `files_touched` (checked in `docs/tasks/T029.yml`). Three groups, each starting
+when the previous one is merged:
+
+- **F1 (3 agents): T030 dashboard, T031 artifact-store, T032 release-service.** T030: intake answers 422 for a
+  version above 2^63-1 (today 500) and accepts the new `internal error` row of build.finished. T031: a download
+  `{version}` above 2^63-1 is 422 (today 404), the store never assigns one; the event sender gets the deadline
+  (#171). T032: request bodies with a version above 2^63-1 are 422 (today stored as text), the column becomes an
+  integer; the event sender gets the deadline (#171).
+- **F2 (1 agent): T033 pipeline-runner.** Any unexpected error in a run's background task marks the run failed
+  with `internal error` and sends build.finished (#167); a failed step, its skipped successors and the final state
+  are committed in one transaction (found by T029: under load a poll saw `running` with a failed step, which the
+  contract forbids); the event sender gets the deadline (#171). After T030, so the dashboard accepts the new
+  build.finished row before the runner sends it.
+- **F3 (1 agent): T034 (tester).** Stack tests for the version cap end to end and for a dashboard that accepts
+  connections and never answers (stopped with SIGSTOP) while the three senders are under load; `docs/DEMO.md`
+  known limitations updated. Last, because it tests T030-T033.
+
+**Wave 3: hardening (outline only; scope decided by the project owner on 2026-11-27, Q-43, #177, which refines
+Q-27).** First a real event queue replacing the HTTP event calls (the contracts keep the event payloads), retries
+(including the upload retries and cleanup left open by #120 and Q-37) and persistence (a real database with
+versioned migrations, Q-03); then end-to-end browser tests (e2e-tester). Also in wave 3: login (what it covers,
+people, services (Q-09) or both, is settled when wave 3 is planned), request size limits (#163, Q-39) and a second
+look at dashboard buttons (Q-32). Not in wave 3: the React dashboard (a later wave). No task specs until wave 3 is
+planned.
 
 ## Contract file format
 
@@ -233,14 +258,26 @@ equal to the file name without `.yml`.
 - CI: third-party GitHub Actions pinned by commit SHA; pip packages pinned to exact versions.
 - Contracts are frozen once T012 merges; changes go through the lead (table below). The T020 changes are the
   last between waves 1 and 2; from the start of T021 to the end of wave 2 only a Blocking defect changes them.
+  The T029 changes (Q-40, Q-41) are the last before the wave 2 follow-ups; from the start of T030 until T034 is
+  merged only a Blocking defect changes them.
 - Wave 2 setup (ports, env vars, data dir, scripts, `pyproject.toml` tables, CI) is `docs/team/environment.md`
   § "Wave 2 setup (T019, approved)"; task specs do not restate it.
 - Write endpoints commit the database transaction before they send the response; events are sent only after the
   commit, from a background task, so a slow or down dashboard never delays or changes a response or an outcome
   (Q-11 default).
 - Event senders (pipeline-runner, artifact-store, release-service) behave the same: a new `event_id` (UUID) per
-  event, reused on every retry; up to 3 attempts with 2 s timeout each, waiting 0.5 s and then 1 s; retry only on
-  a network error, a timeout or a 5xx; then log and drop. Sending never raises into the caller.
+  event, reused on every retry; up to 3 attempts, waiting 0.5 s and then 1 s; retry only on a network error, a
+  timeout or a 5xx; then log and drop. Sending never raises into the caller. Deadline (Q-42, #171, from T030 on):
+  each event has a total deadline of 5 s from the moment it is handed to the sender, covering every attempt and
+  wait (connect, write, read); each attempt's timeout is 2 s or the time left, whichever is less, and no attempt
+  or wait starts past the deadline; at the deadline the event is dropped and logged. With a dashboard that never
+  answers this allows 2 attempts. Sending runs on the service's event loop with one `httpx.AsyncClient` per app
+  (closed in the lifespan), as its own task: never on the handler thread pool, and never awaited by a request
+  handler, a background task or the runner, which schedule it and return at once. Async, not a thread executor,
+  because a blocking httpx call cannot be cut off at a total deadline (its timeouts are per phase, #167 review).
+  At most 1000 events wait or are in flight per service; one more is dropped and logged. At shutdown pending
+  sends are cancelled after at most 1 s and logged as dropped. (Wave 2 used a synchronous client in background
+  tasks on the handler thread pool, #171.)
 - Error precedence is the one in each operation's description; where none is stated: 422 for a malformed path or
   query parameter, then 404, then 422 for the body, then 409.
 - No new package in wave 2 unless the task's spec lists its `pyproject.toml` and `uv.lock` and the reviewer
@@ -274,6 +311,12 @@ Owner, branch, dependencies and `read_first` are in each `docs/tasks/Tnn.yml`.
 | [T026](tasks/T026.yml) | 2c. release-service (backend-dev): request with `requested_by` (Q-30), final decision (Q-10), promote only if approved (Q-16), idempotent promote (Q-31), events, no promotion event (Q-14) | named pytest node IDs, conformance test, coverage | `services/release-service/` except the T022 copies | done (PR #169, merge 70dde03; 2 fix rounds) |
 | [T027](tasks/T027.yml) | 2c. dashboard UI (frontend-dev): `services/dashboard/static/` builds, failures, artifacts, releases; auto-refresh; no buttons (Q-32); only the dashboard's own JSON (Q-23); `assumed (#131)` | the grep checks in `T027.yml`; browser smoke test against the real dashboard and ux-reviewer (review gates) | `services/dashboard/static/**` | done (PR #168, merge 2fc966c; 2 fix rounds, UX review too; acceptance A4 is vacuous, the property was verified by the reviewer by code and a runtime request log (#173)) |
 | [T028](tasks/T028.yml) | 2d. Stack tests and demo (tester): `stack-tests/` full flow, failed step, failed upload, bad name; CI `stack` job in `ci-ok`; `docs/DEMO.md` | `uv run pytest` in `stack-tests/`; the DEMO walkthrough block runs; `ci-ok` success | `stack-tests/**`, `.github/workflows/ci.yml`, `docs/DEMO.md` | done (PR #174, merge 3456c31; 0 fix rounds) |
+| [T029](tasks/T029.yml) | Wave 2 follow-ups spec: the project owner's 2026-11-27 decisions as Q-39..Q-43; contract changes #170 (version cap) and #167 (`internal error`); wave 3 outline; specs T030-T034 | the commands in `T029.yml`: specs parse, group `files_touched` disjoint, `read_first` targets exist, version cap and `internal error` rows present, `check_contracts.py` and `--self-test` exit 0, `check_brief_quotes.py` exits 0, the four service suites pass on the changed contracts; reviewer APPROVE (review gate) | see `T029.yml` | in-review |
+| [T030](tasks/T030.yml) | F1. dashboard (backend-dev): `POST /events` 422 for a version above 2^63-1 (Q-40, #170); accepts the build.finished `internal error` row (Q-41, #167) | named pytest node IDs, conformance, coverage | see `T030.yml` | todo |
+| [T031](tasks/T031.yml) | F1. artifact-store (backend-dev): download `{version}` above 2^63-1 is 422, never assigns one (Q-40); async event sender with a 5 s deadline (Q-42, #171) | named pytest node IDs incl. the 80-request hanging-dashboard test, conformance, coverage | see `T031.yml` | todo |
+| [T032](tasks/T032.yml) | F1. release-service (backend-dev): version above 2^63-1 is 422, integer column (Q-40); async event sender with a 5 s deadline (Q-42, #171) | named pytest node IDs incl. the 80-request hanging-dashboard test, conformance, coverage | see `T032.yml` | todo |
+| [T033](tasks/T033.yml) | F2. pipeline-runner (backend-dev): unexpected background error marks the run failed with `internal error` and sends build.finished (Q-41, #167); one-transaction finish; async event sender with a 5 s deadline (Q-42, #171) | named pytest node IDs (error injected at step, upload, finish; 80-request hanging-dashboard test), conformance, coverage | see `T033.yml` | todo |
+| [T034](tasks/T034.yml) | F3. Stack tests (tester): version cap end to end, SIGSTOP dashboard under load, `docs/DEMO.md` limitations | named stack tests in `stack-tests/`; `ci-ok` success | `stack-tests/tests/**`, `docs/DEMO.md` | todo |
 
 ## Contract change requests
 
@@ -282,3 +325,6 @@ Owner, branch, dependencies and `read_first` are in each `docs/tasks/Tnn.yml`.
 | 2026-11-25 | reviewer (T012 verify, #112) | `contracts/api-pipeline-runner.yml` info: cite #110 / Q-34 in the sentence on which artifacts a run uploads (wording only) | applied in T017 (PR #123) |
 | 2026-11-26 | architect (T017 finding, #121) | `contracts/events.yml` `Checksum` and `Timestamp`: add `not: {pattern: "\n"}`, the guard T017 gave `ArtifactName` (Python `re` lets `$` match before a final newline); they were the only unguarded `pattern`s in the six files (`PipelineName` refers to `ArtifactName`) | applied in T020 |
 | 2026-11-26 | reviewer (T019 review, #136) | Error mapping in `shared/errors.py`: any framework 4xx without its own code answers 422 `validation_failed`, any 5xx answers 500 `internal_error`. Chosen over adding (status, `validation_failed`) pairs to `errors.yml` `x-status-codes`: no contract change, every status a service can emit stays listed in `x-status-codes`, and no operation would list the new statuses, so the conformance test (Q-22) needs nothing extra | decided in T020, no contract change; written into `docs/team/environment.md` (Error envelope row) and `T022.yml` |
+| 2026-11-27 | architect (T029; the project owner's decision on #170, Q-40) | `contracts/events.yml` `ArtifactVersion`: `maximum: 9223372036854775807` (2^63-1); every version in the six files refers to it. A larger value is 422 `validation_failed` in `POST /events`, `POST /releases` and artifact-store's download (was 404 there); the store never assigns one (500 if it would have to, after 2^63-1 uploads of one name). Descriptions and a release-service 422 example added | applied in T029; code in T030-T032 |
+| 2026-11-27 | architect (T029; the project owner's decision on #167, Q-41) | `contracts/events.yml` `FailureReason` gets the value `internal error`; new `InterruptedRunSteps`; `BuildFinishedData`, pipeline-runner `Run` and dashboard `BuildView` get a fourth state row (failed, `failed_step` null, `internal error`, `InterruptedRunSteps`), and the upload row now requires exactly `artifact upload failed`. No new run status. Examples added in `events.yml` and `BuildView` only, not in pipeline-runner's `Run` or response examples, because each service's conformance test validates those against the current app schema (CI would go red until T033) | applied in T029; code in T030 (intake) and T033 (runner); T033 adds no example (contracts frozen), a later contract task may |
+| 2026-11-27 | architect (T029; the project owner's decisions on #163 and #171, Q-39, Q-42) | none: #163 is wave 3; #171 changes the event-sender convention in § Conventions (5 s total deadline, async sender), not a contract | no contract change |
