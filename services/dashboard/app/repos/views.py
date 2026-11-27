@@ -50,7 +50,9 @@ def _outcome(value: str) -> BuildStatus:
 
 
 def _reason(value: str | None) -> FailureReason | None:
-    return None if value is None else "artifact upload failed"
+    if value is None:
+        return None
+    return "internal error" if value == "internal error" else "artifact upload failed"
 
 
 def list_artifacts(session: Session, limit: int, offset: int) -> ArtifactPage:
