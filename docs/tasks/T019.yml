@@ -33,7 +33,7 @@ acceptance:
   - "python3 scripts/team/check_brief_quotes.py  # exits 0 (regression only; it scans PLAN.md and OPEN_QUESTIONS.md, not environment.md)"
   - "python3 scripts/ci/check_contracts.py  # exits 0 (with scripts/ci/requirements-contracts.txt installed)"
   - "reviewer APPROVE: every row is concrete (no 'TBD', no 'to be decided'), the port formula gives distinct ports for every (slot, service) pair, and the SQLite path never lands in a tracked file  (review gate, not a command)"
-  - "Nir approves the proposal on issue #25; until then the section keeps its 'proposed' status and no service task is specified  (review gate, not a command)"
+  - "The project owner approves the proposal on issue #25; until then the section keeps its 'proposed' status and no service task is specified  (review gate, not a command)"
 summary: >
   Docs-only proposal for the wave 2 setup decisions (Q-03, user decision on #25). Add one section to
   docs/team/environment.md headed exactly "## Wave 2 setup (proposal, T019)", whose first line after the heading is
@@ -62,5 +62,5 @@ summary: >
   is frozen; where per-service data models go). Update the existing § "Open", § "Commands" and the Ports bullet of
   § "Worktrees, ports and databases" to point to the new section (still as a proposal), without deleting what the
   user decided. Writes no service code, no pyproject.toml, no script and no CI change; those are later wave 2
-  tasks specified only after Nir approves. Anything this task cannot settle (e.g. inter-service auth, Q-09) goes
+  tasks specified only after the project owner approves. Anything this task cannot settle (e.g. inter-service auth, Q-09) goes
   under Open questions in the report, not into the table.

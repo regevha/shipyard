@@ -77,7 +77,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 
   Later decision, which replaces item 2:
 
-  > #25 Q-03: a setup task at the start of wave 2 proposes DB/migrations, start command, ports, per-service pyproject; Nir approves.
+  > #25 Q-03: a setup task at the start of wave 2 proposes DB/migrations, start command, ports, per-service pyproject; the project owner approves.
 
 ### Q-04 Issue labels
 - **Conflict:** the user brief: "Every request or finding in an agent report becomes a GitHub issue labelled
@@ -459,7 +459,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   artifacts of failed builds.
 - **Status:** `answered-by-user` (2026-11-26, issue #131): option (a). T023, T024, T025, T027 and T028 carried
   `assumed (#131)`, which now stands as the decision. Retries and cleanup are wave 3.
-- **User decision (Nir's reply to the lead session, 2026-11-26 21:41 Asia/Jerusalem, recorded by the lead on #131):**
+- **User decision (the project owner's reply to the lead session, 2026-11-26 21:41 Asia/Jerusalem, recorded by the lead on #131):**
 
   > a
 
@@ -469,8 +469,8 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Status:** `answered-by-user` (2026-11-26 21:28 Asia/Jerusalem, source: the lead session chat, not GitHub): the lead
   said it would treat 85 as the starting value unless the user wanted another number, and the user replied with the
   single word below. GitHub corroboration, both written by the lead session: the lead's comment on PR #151 (T021, 2026-11-26
-  19:57:39Z) says `Coverage fail_under = 85 confirmed by Nir.`, and the PR #151 description says `fail_under = 85 in all four
-  (lead confirms)` (it does not mention Nir).
+  19:57:39Z) says `Coverage fail_under = 85 confirmed by the project owner.`, and the PR #151 description says `fail_under = 85 in all four
+  (lead confirms)` (it does not mention the project owner).
 - **User decision (2026-11-26 21:28 Asia/Jerusalem, lead session chat):**
 
   > ok
