@@ -11,7 +11,7 @@ One row per uploaded version. Rows are never updated or deleted.
 | --- | --- | --- |
 | `id` | `VARCHAR(36)` PK | UUID generated in Python |
 | `name` | `VARCHAR(100)` NOT NULL | artifact name, Q-29 rule, case-sensitive |
-| `version` | `INTEGER` NOT NULL | per name, starts at 1 (Q-17): the next one is `max(version) + 1` |
+| `version` | `INTEGER` NOT NULL | per name, starts at 1 (Q-17): the next one is `max(version) + 1`; capped at 2^63-1 (Q-40): when `max(version)` is already 2^63-1 nothing is stored (no blob, no row, no event) and the upload answers 500 |
 | `checksum` | `VARCHAR(64)` NOT NULL | SHA-256 of the bytes, lowercase hex |
 | `size_bytes` | `INTEGER` NOT NULL | 0 to 104857600 |
 | `build_id` | `VARCHAR(36)` NOT NULL | recorded as sent, not checked with pipeline-runner |

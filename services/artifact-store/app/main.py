@@ -23,10 +23,13 @@ def create_app(settings: Settings | None = None, sender: EventSender | None = No
         repo = ArtifactRepo(engine, BlobStore(cfg.blob_dir))
         repo.create_tables()
         app.state.repo = repo
-        app.state.sender = sender or EventSender(cfg.dashboard_url)
+        events = sender or EventSender(cfg.dashboard_url)
+        await events.start()
+        app.state.sender = events
         try:
             yield
         finally:
+            await events.close()
             engine.dispose()
 
     application = FastAPI(title="artifact-store", version="0.1.0", lifespan=lifespan)

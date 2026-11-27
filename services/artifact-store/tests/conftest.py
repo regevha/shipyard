@@ -56,11 +56,18 @@ def sleeps() -> list[float]:
 
 
 @pytest.fixture
-def client(settings: Settings, dashboard: Dashboard, sleeps: list[float]) -> Iterator[TestClient]:
-    sender = EventSender(
+def sender(settings: Settings, dashboard: Dashboard, sleeps: list[float]) -> EventSender:
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)  # the waits are recorded, not slept
+
+    return EventSender(
         settings.dashboard_url,
         transport=httpx.MockTransport(dashboard.handler),
-        sleep=sleeps.append,
+        sleep=fake_sleep,
     )
+
+
+@pytest.fixture
+def client(settings: Settings, sender: EventSender) -> Iterator[TestClient]:
     with TestClient(create_app(settings, sender)) as c:
         yield c
