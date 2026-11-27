@@ -6,7 +6,7 @@ from uuid import UUID
 
 import httpx
 import pytest
-from conftest import Fakes, steps_body
+from conftest import Fakes, settle, steps_body
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openapi_conformance import find_contract, schema_validator
@@ -20,6 +20,7 @@ def run_to_end(client: TestClient, body: dict[str, Any]) -> dict[str, Any]:
     build_id = client.post("/runs", json=body).json()["build_id"]
     run: dict[str, Any] = client.get(f"/runs/{build_id}").json()
     RUN.validate(run)
+    settle(client)  # events are delivered by the sender's own tasks, after the run
     return run
 
 
@@ -70,7 +71,7 @@ def test_q34_passed_build_uploads_one_artifact_named_after_pipeline(
 def test_q34_failed_step_uploads_nothing(client: TestClient, fakes: Fakes) -> None:
     run_to_end(client, steps_body("a", "fail"))
     assert fakes.uploads == []
-    assert fakes.calls == ["event:build.started", "event:build.finished"]
+    assert sorted(fakes.calls) == ["event:build.finished", "event:build.started"]
 
 
 def test_q36_upload_happens_while_running_and_before_build_finished(
@@ -86,12 +87,17 @@ def test_q36_upload_happens_while_running_and_before_build_finished(
 
     fakes.artifact = artifact
     run = run_to_end(client, steps_body("a", "b"))
-    assert fakes.calls == ["event:build.started", "upload", "event:build.finished"]
+    # the started event travels on its own task; the upload precedes build.finished
+    assert [c for c in fakes.calls if c != "event:build.started"] == [
+        "upload",
+        "event:build.finished",
+    ]
+    assert fakes.calls.count("event:build.started") == 1
     assert len(seen) == 1
     assert seen[0]["status"] == "running"
     assert seen[0]["finished_at"] is None
     assert [s["status"] for s in seen[0]["steps"]] == ["passed", "passed"]
-    finished = fakes.events[-1]
+    finished = finished_event(fakes)
     assert finished["occurred_at"] == run["finished_at"]
     assert finished["data"]["outcome"] == "passed"
 
@@ -105,13 +111,18 @@ def test_q36_upload_non_201_fails_build_with_reason(
     assert_upload_failed(run, fakes)
 
 
+def finished_event(fakes: Fakes) -> dict[str, Any]:
+    (event,) = [e for e in fakes.events if e["type"] == "build.finished"]
+    return event
+
+
 def assert_upload_failed(run: dict[str, Any], fakes: Fakes) -> None:
     assert run["status"] == "failed"
     assert run["failed_step"] is None
     assert run["failure_reason"] == "artifact upload failed"
     assert all(s == "passed" for s in statuses(run))
     assert run["finished_at"] is not None
-    finished = fakes.events[-1]
+    finished = finished_event(fakes)
     assert finished["type"] == "build.finished"
     assert finished["data"]["outcome"] == "failed"
     assert finished["data"]["failure_reason"] == "artifact upload failed"
@@ -150,7 +161,7 @@ def test_q36_upload_attempted_exactly_once(client: TestClient, fakes: Fakes) -> 
 
 def test_build_started_and_build_finished_events_sent(client: TestClient, fakes: Fakes) -> None:
     run = run_to_end(client, steps_body("a", "b"))
-    started, finished = fakes.events
+    started, finished = sorted(fakes.events, key=lambda e: e["type"] != "build.started")
     STARTED.validate(started)
     FINISHED.validate(finished)
     assert started["source"] == finished["source"] == "pipeline-runner"
@@ -163,8 +174,8 @@ def test_build_started_and_build_finished_events_sent(client: TestClient, fakes:
 
 def test_failed_build_finished_event_validates(client: TestClient, fakes: Fakes) -> None:
     run_to_end(client, steps_body("a", "fail", "c"))
-    FINISHED.validate(fakes.events[-1])
-    assert fakes.events[-1]["data"]["failed_step"] == "s2"
+    FINISHED.validate(finished_event(fakes))
+    assert finished_event(fakes)["data"]["failed_step"] == "s2"
 
 
 def test_event_delivery_failure_does_not_change_outcome(client: TestClient, fakes: Fakes) -> None:
@@ -177,9 +188,9 @@ def test_event_delivery_failure_does_not_change_outcome(client: TestClient, fake
     assert len(fakes.uploads) == 1
     # 3 attempts per event, same event_id on each attempt, waits 0.5 s then 1 s
     ids = [e["event_id"] for e in fakes.event_attempts]
-    assert len(ids) == 6 and ids[0] == ids[1] == ids[2] and ids[3] == ids[4] == ids[5]
-    assert ids[0] != ids[3]
-    assert fakes.sleeps == [0.5, 1.0, 0.5, 1.0]
+    assert len(ids) == 6 and len(set(ids)) == 2
+    assert all(ids.count(i) == 3 for i in ids)
+    assert sorted(fakes.sleeps) == [0.5, 0.5, 1.0, 1.0]
 
 
 def test_event_5xx_is_retried_then_dropped_4xx_is_not(client: TestClient, fakes: Fakes) -> None:
@@ -202,7 +213,7 @@ def test_event_recovers_on_retry(client: TestClient, fakes: Fakes) -> None:
 
     fakes.dashboard = flaky
     run_to_end(client, steps_body("fail"))
-    assert [e["type"] for e in fakes.events] == ["build.started", "build.finished"]
+    assert sorted(e["type"] for e in fakes.events) == ["build.finished", "build.started"]
     assert fakes.sleeps == [0.5]
 
 
@@ -212,21 +223,11 @@ def test_step_seconds_delay_is_applied_per_step(fakes: Fakes, settings: Any) -> 
     from app.main import create_app
 
     waits: list[float] = []
-    app = create_app(replace(settings, step_seconds=0.25), fakes.transport(), waits.append)
+    cfg = replace(settings, step_seconds=0.25)
+    app = create_app(cfg, fakes.transport(), waits.append, fakes.sender(cfg))
     with TestClient(app) as c:
         run_to_end(c, steps_body("a", "b"))
     assert waits == [0.25, 0.25]
-
-
-def test_unexpected_error_in_background_is_logged_not_raised(
-    client: TestClient, app: FastAPI, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def boom(*args: Any, **kwargs: Any) -> None:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(app.state.runner, "_upload", boom)
-    run = run_to_end(client, steps_body("a"))
-    assert run["status"] == "running"  # stays running; the error is only logged
 
 
 def test_b1_400_concurrent_runs_all_reach_a_final_state(
@@ -240,7 +241,7 @@ def test_b1_400_concurrent_runs_all_reach_a_final_state(
     from app.models import PipelineDefinition
 
     cfg = replace(settings, database_url=f"sqlite:///{tmp_path}/runner.db")
-    app = create_app(cfg, fakes.transport(), fakes.sleeps.append)
+    app = create_app(cfg, fakes.transport(), fakes.sleeps.append, fakes.sender(cfg))
     with TestClient(app):
         repo = app.state.repo
         runner = app.state.runner
@@ -252,6 +253,7 @@ def test_b1_400_concurrent_runs_all_reach_a_final_state(
         # the real background path (Runner.execute), 40 runs at once on one file database
         with ThreadPoolExecutor(max_workers=100) as pool:
             list(pool.map(runner.execute, ids))
+        assert app.state.events.wait_idle(30.0)
         runs = [repo.get(i) for i in ids]
     assert all(r is not None for r in runs)
     assert {r.status for r in runs if r} <= {"passed", "failed"}

@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.core.events import EventSender
 from app.main import create_app
 
 ARTIFACT_HOST = "artifact-store.test"
@@ -50,6 +51,13 @@ class Fakes:
     sleeps: list[float] = field(default_factory=list)
     artifact: Handler = artifact_created
     dashboard: Handler = dashboard_accepted
+
+    async def sleep(self, seconds: float) -> None:
+        """The event sender's wait: recorded, not slept."""
+        self.sleeps.append(seconds)
+
+    def sender(self, settings: Settings) -> EventSender:
+        return EventSender(settings.dashboard_url, self.transport(), sleep=self.sleep)
 
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
@@ -89,7 +97,7 @@ def settings() -> Settings:
 
 @pytest.fixture
 def app(fakes: Fakes, settings: Settings) -> FastAPI:
-    return create_app(settings, fakes.transport(), fakes.sleeps.append)
+    return create_app(settings, fakes.transport(), fakes.sleeps.append, fakes.sender(settings))
 
 
 @pytest.fixture
@@ -103,3 +111,8 @@ def steps_body(*commands: str, name: str = "shipyard-api") -> dict[str, Any]:
         "name": name,
         "steps": [{"name": f"s{i}", "command": c} for i, c in enumerate(commands, 1)],
     }
+
+
+def settle(client: TestClient) -> None:
+    """Wait until every event the app handed to its sender has been delivered or dropped."""
+    assert client.app.state.events.wait_idle(10.0)  # type: ignore[attr-defined]

@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import (
+    INTERNAL_ERROR,
     FailureReason,
     PipelineDefinition,
     Run,
@@ -104,13 +105,6 @@ class RunRepo:
                 step.finished_at = finished_at
             session.commit()
 
-    def skip_steps_from(self, build_id: UUID, position: int) -> None:
-        with self._factory() as session:
-            for step in self._steps(session, build_id):
-                if step.position >= position:
-                    step.status = "skipped"
-            session.commit()
-
     def finish(
         self,
         build_id: UUID,
@@ -128,3 +122,43 @@ class RunRepo:
             row.failure_reason = failure_reason
             session.commit()
             return _to_run(row, self._steps(session, build_id))
+
+    def fail_step(self, build_id: UUID, position: int, finished_at: str) -> Run:
+        """One commit: the step failed, the later steps skipped, the run failed (Q-33)."""
+        with self._factory() as session:
+            row = session.get(RunRow, str(build_id))
+            assert row is not None
+            steps = self._steps(session, build_id)
+            for step in steps:
+                if step.position == position:
+                    step.status = "failed"
+                    step.finished_at = finished_at
+                    row.failed_step = step.name
+                elif step.position > position:
+                    step.status = "skipped"
+            row.status = "failed"
+            row.finished_at = finished_at
+            row.failure_reason = None
+            session.commit()
+            return _to_run(row, steps)
+
+    def fail_internal(self, build_id: UUID, now: str) -> Run | None:
+        """Q-41, one commit in a fresh session: the running step failed, the pending steps
+        skipped, the run failed with `internal error`. None when the run is already final."""
+        with self._factory() as session:
+            row = session.get(RunRow, str(build_id))
+            if row is None or row.status != "running":
+                return None
+            steps = self._steps(session, build_id)
+            for step in steps:
+                if step.status == "running":
+                    step.status = "failed"
+                    step.finished_at = now
+                elif step.status == "pending":
+                    step.status = "skipped"
+            row.status = "failed"
+            row.finished_at = now
+            row.failed_step = None
+            row.failure_reason = INTERNAL_ERROR
+            session.commit()
+            return _to_run(row, steps)

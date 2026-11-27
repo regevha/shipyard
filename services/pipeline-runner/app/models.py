@@ -17,9 +17,10 @@ StepName = Annotated[str, Field(min_length=1)]
 
 StepStatus = Literal["pending", "running", "passed", "failed", "skipped"]
 RunStatus = Literal["running", "passed", "failed"]
-FailureReason = Literal["artifact upload failed"]
+FailureReason = Literal["artifact upload failed", "internal error"]
 
 UPLOAD_FAILED: FailureReason = "artifact upload failed"
+INTERNAL_ERROR: FailureReason = "internal error"
 
 
 class StepDefinition(BaseModel):
