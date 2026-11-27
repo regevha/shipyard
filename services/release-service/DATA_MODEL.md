@@ -9,7 +9,7 @@ Tables are in `app/repos/tables.py`; all SQL is in `app/repos/releases.py`.
 | --- | --- | --- | --- |
 | `release_id` | VARCHAR(36), primary key | no | UUID string, assigned by the service |
 | `artifact_name` | VARCHAR(100) | no | artifact name (events.yml ArtifactName); not checked against artifact-store (Q-16) |
-| `artifact_version` | TEXT | no | artifact version >= 1 as decimal text: the contract sets no upper bound and SQLite INTEGER stops at 2^63-1 |
+| `artifact_version` | BIGINT (SQLAlchemy `BigInteger`) | no | artifact version, 1 to 2^63-1: the contract caps it (Q-40), so it fits a 64-bit integer; larger values are 422 before anything is stored |
 | `status` | VARCHAR(16) | no | `pending`, `approved` or `rejected`; a decision is final (Q-10) |
 | `requested_by` | TEXT | no | free non-empty string as sent (Q-30) |
 | `requested_at` | VARCHAR(30) | no | UTC RFC 3339 with `Z`, set by the server |

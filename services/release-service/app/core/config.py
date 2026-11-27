@@ -18,9 +18,12 @@ def _data_dir() -> str:
 class Settings:
     database_url: str
     dashboard_url: str
-    # Event sender (PLAN.md Conventions): 3 attempts, 2 s timeout, waits 0.5 s then 1 s.
+    # Event sender (PLAN.md Conventions, Q-42): 5 s total deadline, attempt timeout min(2 s, time
+    # left), waits 0.5 s then 1 s, at most 1000 events pending. Injectable for tests.
+    event_deadline_seconds: float = 5.0
     event_timeout_seconds: float = 2.0
     event_backoff_seconds: tuple[float, ...] = (0.5, 1.0)
+    event_pending_cap: int = 1000
 
     @classmethod
     def from_env(cls) -> Settings:
