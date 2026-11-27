@@ -482,7 +482,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
 - **Options (wave 2 summary):** (a) add caps to the contracts now; (b) leave them for wave 3.
 - **Status:** `answered-by-user` (2026-11-27, issue #163): option (b). No contract change now; request size limits
   are part of the wave 3 scope (Q-43). #163 stays open for wave 3.
-- **User decision (the project owner, 2026-11-27 08:42, written in the wave 2 summary doc and confirmed in the lead
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
   session; recorded by the lead on #163):**
 
   > #163: (b), leave for wave 3. The services have no login yet, and wave 3 adds it, so add size limits then.
@@ -498,7 +498,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   it (`Artifact`, `ArtifactRef`, artifact-store's `{version}` path parameter, release-service's request body and
   `Release`, the dashboard's views). A larger value is 422 `validation_failed` wherever a version is received;
   artifact-store never assigns one. The code follows in T030-T032 (`docs/PLAN.md` § Waves).
-- **User decision (the project owner, 2026-11-27 08:42, written in the wave 2 summary doc and confirmed in the lead
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
   session; recorded by the lead on #170):**
 
   > #170: (b), cap versions in the contract. It is a one-line limit that makes the edge case explicit instead of a silent 500.
@@ -517,7 +517,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   as the new `events.yml#/$defs/InterruptedRunSteps` (each step passed, failed or skipped, at most one failed: the
   step that was running when the error happened). No new run status. The upload row now requires exactly
   `artifact upload failed`. The code follows in T033 (runner) and T030 (dashboard intake accepts the new row).
-- **User decision (the project owner, 2026-11-27 08:42, written in the wave 2 summary doc and confirmed in the lead
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
   session; recorded by the lead on #167):**
 
   > #167: (b), mark it failed in code. A crash is a failure, and a stuck "running" build is a real bug. Change the contract only if the failed state cannot carry a reason.
@@ -534,7 +534,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   outbound calls are the three senders' calls to the dashboard's `POST /events`. No contract change. The event
   sender convention in `docs/PLAN.md` § Conventions now has a total deadline of 5 s per event and an async sender
   off the handler thread pool; the code follows in T031-T033.
-- **User decision (the project owner, 2026-11-27 08:42, written in the wave 2 summary doc and confirmed in the lead
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
   session; recorded by the lead on #171):**
 
   > #171: (a), fix now. A deadline on the dashboard's outbound calls is a small change, and it still helps after the queue arrives.
@@ -547,7 +547,7 @@ text, quotes it where it holds, and labels the rest as assumptions (Q-05, Q-08, 
   React dashboard moves to a later wave. Written into the wave 3 outline of `docs/PLAN.md` § Waves (outline only,
   no task specs yet). Still to settle when wave 3 is planned: what login covers (people using release-service and
   the dashboard, the services calling each other (Q-09), or both).
-- **User decision (the project owner, 2026-11-27 08:42, written in the wave 2 summary doc and confirmed in the lead
+- **User decision (the project owner, 2026-11-27 08:42 Asia/Jerusalem, written in the wave 2 summary doc and confirmed in the lead
   session; recorded by the lead on new issue #177):**
 
   > Wave 3: the queue, retries and persistence, then end-to-end tests, plus login, request size limits (#163) and a second look at dashboard buttons (Q-32). Leave the React dashboard for a later wave so wave 3 stays focused.

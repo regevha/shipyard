@@ -70,6 +70,7 @@ summary: >
   background thread on a free 127.0.0.1 port, with DASHBOARD_URL pointing at a local listener that accepts
   connections and never answers, sends 80 concurrent POST /releases (each 201), then, while those events are still
   pending, one GET /releases/{release_id} that must answer within 1.0 s (the T026 review measured 6.09 s); run it
-  once on the unfixed code and record that time in the hand-off as "unfixed: <n> s". Update the existing sender
+  once on the unfixed code and record that time in the hand-off as "unfixed: <n> s". The test also asserts, through a test hook on the sender that reports the number of pending sends, that at least one event is still
+  pending at the moment the GET is timed, so the GET is measured while the dashboard is hanging. Update the existing sender
   tests (tests/test_release_events.py, tests/conftest.py) to the async sender without weakening what they prove.
   No new package. Never edit the T022 copies. Hand-off docs/tasks/T032.md.

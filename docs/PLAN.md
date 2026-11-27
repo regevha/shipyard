@@ -267,7 +267,7 @@ equal to the file name without `.yml`.
   (Q-11 default).
 - Event senders (pipeline-runner, artifact-store, release-service) behave the same: a new `event_id` (UUID) per
   event, reused on every retry; up to 3 attempts, waiting 0.5 s and then 1 s; retry only on a network error, a
-  timeout or a 5xx; then log and drop. Sending never raises into the caller. Deadline (Q-42, #171, from T030 on):
+  timeout or a 5xx; then log and drop. Sending never raises into the caller. Deadline (Q-42, #171, in T031-T033):
   each event has a total deadline of 5 s from the moment it is handed to the sender, covering every attempt and
   wait (connect, write, read); each attempt's timeout is 2 s or the time left, whichever is less, and no attempt
   or wait starts past the deadline; at the deadline the event is dropped and logged. With a dashboard that never

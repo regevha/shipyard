@@ -184,7 +184,7 @@ acceptance:
     test -z "$(git diff --name-only origin/main...HEAD | grep -vxF -f <(python3 -c "import yaml; print('\n'.join(yaml.safe_load(open('docs/tasks/T029.yml'))['files_touched'] + ['docs/tasks/T029.md']))"))"  # exits 0: only the listed files changed
   - "reviewer APPROVE: every decision of 2026-11-27 recorded and traced to a task or to wave 3, contract changes minimal and consistent across the six files, specs runnable and disjoint (review gate, not a command)"
 summary: >
-  Architect task after wave 2 closed. Records the project owner's decisions of 2026-11-27 08:42 (#163, #170, #167,
+  Architect task after wave 2 closed. Records the project owner's decisions of 2026-11-27 08:42 Asia/Jerusalem (#163, #170, #167,
   #171, #177; confirmed in the lead session, recorded by the lead on the issues) as Q-39..Q-43. Contract changes
   between waves: ArtifactVersion maximum 2^63-1 with 422 for larger values (#170, Q-40); FailureReason gets
   internal error, a new InterruptedRunSteps and a fourth state row in BuildFinishedData, Run and BuildView

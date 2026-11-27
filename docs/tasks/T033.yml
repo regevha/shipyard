@@ -81,8 +81,9 @@ summary: >
   a free 127.0.0.1 port, DASHBOARD_URL at a local listener that accepts connections and never answers,
   ARTIFACT_STORE_URL at a closed local port (uploads fail fast), PIPELINE_RUNNER_STEP_SECONDS=0; 80 concurrent
   POST /runs (each 202), then, while their events are still pending, one GET /runs/{build_id} that must answer
-  within 1.0 s; record the time on the unfixed code in the hand-off as "unfixed: <n> s". Out of scope (do not
-  change): simulated steps and the upload still run in the worker thread (Open question in T029.md). Update the
+  within 1.0 s; record the time on the unfixed code in the hand-off as "unfixed: <n> s". The test also asserts, through a test hook on the sender that reports the number of pending sends, that at least one event is still
+  pending at the moment the GET is timed, so the GET is measured while the dashboard is hanging. Out of scope (do not
+  change): simulated steps and the upload still run in the worker thread (open question 1 in docs/tasks/T029.md § Open questions). Update the
   existing tests (tests/test_runner_execution.py, tests/conftest.py, tests/test_main.py) without weakening what
   they prove; tests/test_main.py must stop posting to a real $DASHBOARD_URL (#167 review note). No new package.
   Never edit the T022 copies. Update DATA_MODEL.md if a column changes. Hand-off docs/tasks/T033.md.
